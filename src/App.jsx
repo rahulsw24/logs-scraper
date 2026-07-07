@@ -72,11 +72,26 @@ const ACCENTS = {
   },
 };
 
-const RANGE_PRESETS = [
-  { value: '30m', label: '30m' },
-  { value: '1h', label: '1h' },
-  { value: '12h', label: '12h' },
-  { value: '1d', label: '1d' },
+const RANGE_GROUPS = [
+  {
+    label: 'Minutes',
+    options: [
+      { value: '1m', label: '1m' },
+      { value: '2m', label: '2m' },
+      { value: '5m', label: '5m' },
+      { value: '10m', label: '10m' },
+      { value: '15m', label: '15m' },
+      { value: '30m', label: '30m' },
+    ],
+  },
+  {
+    label: 'Hours+',
+    options: [
+      { value: '1h', label: '1h' },
+      { value: '12h', label: '12h' },
+      { value: '1d', label: '1d' },
+    ],
+  },
 ];
 
 function severityFor(message, logGroup, darkMode) {
@@ -286,11 +301,11 @@ export default function App() {
   const mutedCls = darkMode ? 'text-neutral-500' : 'text-neutral-500';
 
   return (
-    <div className={`min-h-screen font-mono transition-colors duration-150 ${bg}`}>
+    <div className={`min-h-screen font-mono transition-colors duration-150 overflow-x-hidden ${bg}`}>
       {/* Signature accent rail — tints with the armed environment */}
       <div className={`h-1 w-full ${accent.topbar} transition-colors duration-300`} />
 
-      <div className="max-w-5xl mx-auto p-6">
+      <div className="w-full px-6 py-6">
         {/* Terminal chrome header */}
         <header className={`rounded-t-xl border px-4 py-3 flex items-center justify-between ${panel}`}>
           <div className="flex items-center gap-3">
@@ -308,8 +323,8 @@ export default function App() {
           <button
             onClick={() => setDarkMode(!darkMode)}
             className={`p-2 rounded-lg border transition-colors ${darkMode
-                ? 'bg-neutral-950 border-neutral-800 text-amber-400 hover:bg-neutral-800'
-                : 'bg-neutral-50 border-neutral-300 text-neutral-600 hover:bg-neutral-100'
+              ? 'bg-neutral-950 border-neutral-800 text-amber-400 hover:bg-neutral-800'
+              : 'bg-neutral-50 border-neutral-300 text-neutral-600 hover:bg-neutral-100'
               }`}
             aria-label="Toggle theme"
           >
@@ -327,7 +342,7 @@ export default function App() {
 
         {/* Control deck */}
         <div className={`border-x border-b rounded-b-xl px-5 py-5 mb-6 flex flex-col gap-5 ${panel}`}>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Environment */}
             <div className="flex flex-col gap-2">
               <label className={`text-[11px] font-sans font-bold tracking-wider uppercase ${labelCls}`}>
@@ -340,8 +355,8 @@ export default function App() {
                     key={key}
                     onClick={() => setEnvironment(key)}
                     className={`py-1.5 rounded-md transition-all ${environment === key
-                        ? ACCENTS[key].segActive
-                        : darkMode ? 'text-neutral-500 hover:text-neutral-300' : 'text-neutral-500 hover:text-neutral-700'
+                      ? ACCENTS[key].segActive
+                      : darkMode ? 'text-neutral-500 hover:text-neutral-300' : 'text-neutral-500 hover:text-neutral-700'
                       }`}
                   >
                     {ENV_CONFIG[key].label.toUpperCase()}
@@ -356,7 +371,7 @@ export default function App() {
                 Lambda target
               </label>
               <select
-                className={`p-2 rounded-lg outline-none text-sm h-[38px] border transition-colors ${inputCls}`}
+                className={`w-full p-2 rounded-lg outline-none text-sm h-[38px] border transition-colors ${inputCls}`}
                 value={logGroup}
                 onChange={(e) => setLogGroup(e.target.value)}
               >
@@ -364,88 +379,101 @@ export default function App() {
                 <option value="webapi_handler">webapi_handler</option>
               </select>
             </div>
+          </div>
 
-            {/* Time range */}
-            <div className="flex flex-col gap-2 relative" ref={pickerRef}>
-              <label className={`text-[11px] font-sans font-bold tracking-wider uppercase ${labelCls}`}>
-                Time range
-              </label>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {RANGE_PRESETS.map((preset) => (
-                  <button
-                    key={preset.value}
-                    onClick={() => setRangeUnit(preset.value)}
-                    className={`px-2.5 h-[38px] rounded-lg border text-xs font-sans font-bold transition-colors ${rangeUnit === preset.value
+          {/* Time range — full-width row, grouped by scale */}
+          <div className="flex flex-col gap-2 relative" ref={pickerRef}>
+            <label className={`text-[11px] font-sans font-bold tracking-wider uppercase ${labelCls}`}>
+              Time range
+            </label>
+            <div className={`flex items-center gap-1 flex-wrap p-1.5 rounded-lg border ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-100 border-neutral-200'
+              }`}>
+              {RANGE_GROUPS.map((group, gi) => (
+                <React.Fragment key={group.label}>
+                  {gi > 0 && <div className={`w-px h-6 mx-1.5 ${darkMode ? 'bg-neutral-800' : 'bg-neutral-300'}`} />}
+                  <span className={`text-[9px] font-sans font-bold uppercase tracking-wider pr-1 ${mutedCls}`}>
+                    {group.label}
+                  </span>
+                  {group.options.map((preset) => (
+                    <button
+                      key={preset.value}
+                      onClick={() => setRangeUnit(preset.value)}
+                      className={`px-2.5 h-8 rounded-md text-xs font-sans font-bold transition-colors ${rangeUnit === preset.value
                         ? accent.segActive
                         : darkMode
-                          ? 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:text-neutral-200'
-                          : 'bg-neutral-100 border-neutral-200 text-neutral-500 hover:text-neutral-800'
-                      }`}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-                <button
-                  onClick={openRangePicker}
-                  className={`flex items-center gap-1.5 px-2.5 h-[38px] rounded-lg border text-xs font-sans font-bold transition-colors ${rangeUnit === 'custom'
-                      ? accent.segActive
-                      : darkMode
-                        ? 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:text-neutral-200'
-                        : 'bg-neutral-100 border-neutral-200 text-neutral-500 hover:text-neutral-800'
-                    }`}
-                >
-                  <Calendar size={13} />
-                  <span className="hidden sm:inline">{customRangeLabel}</span>
-                </button>
-              </div>
-
-              {/* Custom range popover */}
-              {showRangePicker && (
-                <div className={`absolute z-20 top-full mt-2 right-0 w-72 rounded-xl border shadow-xl p-4 flex flex-col gap-3 ${panel}`}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-sans font-bold uppercase tracking-wide">Custom range</span>
-                    <button onClick={() => setShowRangePicker(false)} className={mutedCls}>
-                      <X size={14} />
-                    </button>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className={`text-[11px] font-sans ${labelCls}`}>Start</label>
-                    <input
-                      type="datetime-local"
-                      value={draftStart}
-                      onChange={(e) => setDraftStart(e.target.value)}
-                      className={`p-2 rounded-lg outline-none text-sm border ${inputCls} ${darkMode ? '[color-scheme:dark]' : '[color-scheme:light]'}`}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className={`text-[11px] font-sans ${labelCls}`}>End</label>
-                    <input
-                      type="datetime-local"
-                      value={draftEnd}
-                      onChange={(e) => setDraftEnd(e.target.value)}
-                      className={`p-2 rounded-lg outline-none text-sm border ${inputCls} ${darkMode ? '[color-scheme:dark]' : '[color-scheme:light]'}`}
-                    />
-                  </div>
-                  <div className="flex justify-between gap-2 pt-1">
-                    <button
-                      onClick={clearCustomRange}
-                      className={`text-xs font-sans font-bold px-3 py-1.5 rounded-lg border ${darkMode ? 'border-neutral-800 text-neutral-400 hover:bg-neutral-800' : 'border-neutral-200 text-neutral-500 hover:bg-neutral-100'
+                          ? 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'
+                          : 'text-neutral-500 hover:bg-white hover:text-neutral-800'
                         }`}
                     >
-                      Clear
+                      {preset.label}
                     </button>
-                    <button
-                      onClick={applyCustomRange}
-                      disabled={!draftStart || !draftEnd}
-                      className={`text-xs font-sans font-bold px-3 py-1.5 rounded-lg text-white transition-colors disabled:opacity-40 ${accent.btn}`}
-                    >
-                      Apply range
-                    </button>
-                  </div>
-                </div>
-              )}
+                  ))}
+                </React.Fragment>
+              ))}
+
+              <div className={`w-px h-6 mx-1.5 ${darkMode ? 'bg-neutral-800' : 'bg-neutral-300'}`} />
+
+              <button
+                onClick={openRangePicker}
+                className={`flex items-center gap-1.5 px-3 h-8 rounded-md text-xs font-sans font-bold transition-colors ${rangeUnit === 'custom'
+                  ? accent.segActive
+                  : darkMode
+                    ? 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'
+                    : 'text-neutral-500 hover:bg-white hover:text-neutral-800'
+                  }`}
+              >
+                <Calendar size={13} />
+                {customRangeLabel}
+              </button>
             </div>
+
+            {/* Custom range popover */}
+            {showRangePicker && (
+              <div className={`absolute z-20 top-full mt-2 right-0 w-72 rounded-xl border shadow-xl p-4 flex flex-col gap-3 ${panel}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-sans font-bold uppercase tracking-wide">Custom range</span>
+                  <button onClick={() => setShowRangePicker(false)} className={mutedCls}>
+                    <X size={14} />
+                  </button>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className={`text-[11px] font-sans ${labelCls}`}>Start</label>
+                  <input
+                    type="datetime-local"
+                    value={draftStart}
+                    onChange={(e) => setDraftStart(e.target.value)}
+                    className={`p-2 rounded-lg outline-none text-sm border ${inputCls} ${darkMode ? '[color-scheme:dark]' : '[color-scheme:light]'}`}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className={`text-[11px] font-sans ${labelCls}`}>End</label>
+                  <input
+                    type="datetime-local"
+                    value={draftEnd}
+                    onChange={(e) => setDraftEnd(e.target.value)}
+                    className={`p-2 rounded-lg outline-none text-sm border ${inputCls} ${darkMode ? '[color-scheme:dark]' : '[color-scheme:light]'}`}
+                  />
+                </div>
+                <div className="flex justify-between gap-2 pt-1">
+                  <button
+                    onClick={clearCustomRange}
+                    className={`text-xs font-sans font-bold px-3 py-1.5 rounded-lg border ${darkMode ? 'border-neutral-800 text-neutral-400 hover:bg-neutral-800' : 'border-neutral-200 text-neutral-500 hover:bg-neutral-100'
+                      }`}
+                  >
+                    Clear
+                  </button>
+                  <button
+                    onClick={applyCustomRange}
+                    disabled={!draftStart || !draftEnd}
+                    className={`text-xs font-sans font-bold px-3 py-1.5 rounded-lg text-white transition-colors disabled:opacity-40 ${accent.btn}`}
+                  >
+                    Apply range
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
+
 
           <div className={`flex justify-end border-t pt-4 ${darkMode ? 'border-neutral-800/60' : 'border-neutral-200'}`}>
             <button
@@ -503,42 +531,46 @@ export default function App() {
                 return (
                   <div key={index} className="flex">
                     <div className={`w-1 shrink-0 ${sev.rail}`} />
-                    <div className={`flex-1 transition-colors ${isExpanded ? panelSoft : ''}`}>
+                    <div className={`flex-1 min-w-0 transition-colors ${isExpanded ? panelSoft : ''}`}>
                       <div
-                        className="flex flex-col md:flex-row md:items-center gap-3 p-3 text-xs cursor-pointer"
                         onClick={() => setExpandedIndex(isExpanded ? null : index)}
+                        className="flex flex-col md:flex-row md:items-center gap-3 p-3 text-xs cursor-pointer min-w-0 select-none"
                       >
-                        <span className={`whitespace-nowrap md:w-32 ${mutedCls}`}>{log.Timestamp}</span>
+                        <span className={`whitespace-nowrap md:w-32 shrink-0 ${mutedCls}`}>{log.Timestamp}</span>
                         <span className={`w-20 text-center text-[10px] px-1.5 py-0.5 font-sans font-bold rounded border shrink-0 ${sev.chip}`}>
                           {sev.label}
                         </span>
-                        <span className={`flex-1 truncate ${sev.row}`}>{log.Message}</span>
-                        {isExpanded ? (
-                          <ChevronUp size={14} className={accent.text} />
-                        ) : (
-                          <ChevronDown size={14} className={mutedCls} />
-                        )}
+                        <div className={`flex-1 min-w-0 ${isExpanded ? 'overflow-x-auto log-scroll' : 'overflow-hidden'}`}>
+                          <span className={`block pr-2 ${sev.row} ${isExpanded ? 'whitespace-nowrap' : 'truncate'}`}>{log.Message}</span>
+                        </div>
+                        <div className="shrink-0">
+                          {isExpanded ? (
+                            <ChevronUp size={14} className={accent.text} />
+                          ) : (
+                            <ChevronDown size={14} className={mutedCls} />
+                          )}
+                        </div>
                       </div>
 
                       {isExpanded && (
-                        <div className={`px-4 pb-4 pt-1 border-t flex flex-col gap-3 ${darkMode ? 'border-neutral-800' : 'border-neutral-200'}`}>
-                          <div className={`flex justify-between items-center text-[11px] ${mutedCls}`}>
-                            <span className="font-sans">
-                              Log stream:{' '}
-                              <code className={`px-1 py-0.5 rounded ${accent.text} ${darkMode ? 'bg-neutral-800' : 'bg-neutral-100'}`}>
+                        <div className={`px-4 pb-4 pt-1 border-t flex flex-col gap-3 min-w-0 ${darkMode ? 'border-neutral-800' : 'border-neutral-200'}`}>
+                          <div className={`flex justify-between items-center gap-3 text-[11px] min-w-0 ${mutedCls}`}>
+                            <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto log-scroll">
+                              <span className="font-sans shrink-0">Log stream:</span>
+                              <code className={`px-1 py-0.5 rounded whitespace-nowrap ${accent.text} ${darkMode ? 'bg-neutral-800' : 'bg-neutral-100'}`}>
                                 {log.LogStreamName || '—'}
                               </code>
-                            </span>
+                            </div>
                             <button
                               onClick={() => handleCopy(readable, index)}
-                              className={`flex items-center gap-1 font-sans font-bold px-2 py-1 rounded border transition-colors ${darkMode ? 'border-neutral-800 hover:bg-neutral-800' : 'border-neutral-200 hover:bg-neutral-100'
+                              className={`flex items-center gap-1 font-sans font-bold px-2 py-1 rounded border transition-colors shrink-0 ${darkMode ? 'border-neutral-800 hover:bg-neutral-800' : 'border-neutral-200 hover:bg-neutral-100'
                                 }`}
                             >
                               {copiedIndex === index ? <Check size={12} /> : <Copy size={12} />}
                               {copiedIndex === index ? 'Copied' : 'Copy'}
                             </button>
                           </div>
-                          <pre className={`p-4 rounded-lg text-xs overflow-x-auto whitespace-pre-wrap break-all leading-relaxed max-h-[420px] overflow-y-auto border ${darkMode ? 'bg-neutral-950 border-neutral-800 text-neutral-200' : 'bg-neutral-50 border-neutral-200 text-neutral-800'
+                          <pre className={`p-4 rounded-lg text-xs overflow-x-auto whitespace-pre-wrap break-all leading-relaxed max-h-[420px] overflow-y-auto border log-scroll ${darkMode ? 'bg-neutral-950 border-neutral-800 text-neutral-200' : 'bg-neutral-50 border-neutral-200 text-neutral-800'
                             }`}>
                             {readable}
                           </pre>
@@ -552,6 +584,13 @@ export default function App() {
           )}
         </div>
       </div>
+
+      <style>{`
+        .log-scroll { scrollbar-width: thin; scrollbar-color: ${darkMode ? '#404040 transparent' : '#c7c7c7 transparent'}; }
+        .log-scroll::-webkit-scrollbar { height: 5px; }
+        .log-scroll::-webkit-scrollbar-track { background: transparent; }
+        .log-scroll::-webkit-scrollbar-thumb { background: ${darkMode ? '#404040' : '#c7c7c7'}; border-radius: 9999px; }
+      `}</style>
     </div>
   );
 }
