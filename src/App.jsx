@@ -19,7 +19,7 @@ const ENV_CONFIG = {
   },
   uat: {
     label: 'UAT',
-    domain: 'https://uat-admin.vendis.com.au',
+    domain: 'https://uat.vendis.com.au',
     poolId: 'gpoole048a3',
     pageSize: '9999',
   },
