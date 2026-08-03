@@ -15,19 +15,19 @@ const ENV_CONFIG = {
     label: 'Production',
     domain: 'https://shop.vendis.com.au',
     poolId: 'gpool812642',
-    pageSize: '9999',
+    pageSize: '100', // Updated to match typical pagination size
   },
   uat: {
     label: 'UAT',
     domain: 'https://uat.vendis.com.au',
     poolId: 'gpoole048a3',
-    pageSize: '9999',
+    pageSize: '100',
   },
   staging: {
     label: 'Staging',
     domain: 'https://staging.vendis.com.au',
     poolId: 'gpoold4a251',
-    pageSize: '9999',
+    pageSize: '100',
   },
 };
 
@@ -88,71 +88,16 @@ const RANGE_GROUPS = [
   },
 ];
 
-const RANGE_MS = {
-  '1m': 60_000,
-  '2m': 120_000,
-  '5m': 300_000,
-  '10m': 600_000,
-  '15m': 900_000,
-  '30m': 1_800_000,
-  '1h': 3_600_000,
-  '12h': 43_200_000,
-  '1d': 86_400_000,
-};
-
-const CHUNK_OPTIONS = [
-  { value: 'off', label: 'Single request' },
-  { value: '1', label: '1m' },
-  { value: '2', label: '2m' },
-  { value: '5', label: '5m' },
-  { value: '10', label: '10m' },
-  { value: '15', label: '15m' },
-  { value: '30', label: '30m' },
-  { value: '60', label: '1h' },
-];
-
-const CHUNK_MS = {
-  '1': 60_000,
-  '2': 120_000,
-  '5': 300_000,
-  '10': 600_000,
-  '15': 900_000,
-  '30': 1_800_000,
-  '60': 3_600_000,
-};
-
-const MAX_CHUNKS = 300;
-const CHUNK_CONCURRENCY = 5;
-
 // Generate UTC timestamps to match backend
 function toApiDatetime(d) {
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
 }
 
-// Force inputs to be parsed strictly as UTC by appending 'Z'
-function getAbsoluteRange(rangeUnit, customStart, customEnd) {
-  if (rangeUnit === 'custom') {
-    if (!customStart || !customEnd) return null;
-    return { start: new Date(customStart + 'Z'), end: new Date(customEnd + 'Z') };
-  }
-  const ms = RANGE_MS[rangeUnit] || RANGE_MS['12h'];
-  const end = new Date();
-  const start = new Date(end.getTime() - ms);
-  return { start, end };
-}
-
-function buildChunks(start, end, chunkMs) {
-  const chunks = [];
-  const endMs = end.getTime();
-  let cur = start.getTime();
-  const step = chunkMs > 0 ? chunkMs : endMs - cur;
-  while (cur < endMs) {
-    const chunkEnd = Math.min(cur + step, endMs);
-    chunks.push([new Date(cur), new Date(chunkEnd)]);
-    cur = chunkEnd;
-  }
-  return chunks.length ? chunks : [[start, end]];
+// Force custom inputs to be parsed strictly as UTC by appending 'Z'
+function getAbsoluteRange(customStart, customEnd) {
+  if (!customStart || !customEnd) return null;
+  return { start: new Date(customStart + 'Z'), end: new Date(customEnd + 'Z') };
 }
 
 function severityFor(message, logGroup, darkMode) {
@@ -248,8 +193,6 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
   const [draftEnd, setDraftEnd] = useState('');
   const [showRangePicker, setShowRangePicker] = useState(false);
 
-  const [chunkSize, setChunkSize] = useState('5');
-
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedIndex, setExpandedIndex] = useState(null);
   const [copiedIndex, setCopiedIndex] = useState(null);
@@ -288,100 +231,116 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
     setShowRangePicker(false);
   };
 
-  const fetchChunk = async (config, chunkStart, chunkEnd) => {
-    // FIXED: Removed encodeURIComponent so colons are kept as raw ':' for the backend
-    const queryParams =
+  const fetchPage = async (config, timeParams, nextToken) => {
+    let queryParams =
       `pool_id=${config.poolId}&project_pk=1720&metric=LogStream&log_group=${logGroup}` +
-      `&start_datetime=${toApiDatetime(chunkStart)}&end_datetime=${toApiDatetime(chunkEnd)}`;
+      `&page_size=${config.pageSize}`;
+
+    // Apply either timePeriod OR explicit start/end datetime
+    if (timeParams.timePeriod) {
+      queryParams += `&timePeriod=${timeParams.timePeriod}`;
+    } else if (timeParams.startDt && timeParams.endDt) {
+      queryParams += `&start_datetime=${toApiDatetime(timeParams.startDt)}&end_datetime=${toApiDatetime(timeParams.endDt)}`;
+    }
+
+    if (nextToken) {
+      queryParams += `&next_token=${encodeURIComponent(nextToken)}`;
+    }
+
     const targetUrl = `${config.domain}/metrics/?${queryParams}`;
 
     const response = await fetch(targetUrl, {
       method: 'GET',
       headers: {
         'accept': 'application/json',
-        'authorization': 'Bearer suqMCjzdaYQLYg6HYFZxnRPgAR5NS0'
+        'authorization': 'Bearer suqMCjzdaYQLYg6HYFZxnRPgAR5NS0',
       },
     });
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    const data = await response.json();
-    return data.LogStream?.events || (Array.isArray(data) ? data : []);
+    return await response.json();
   };
 
   const fetchLogsDirectly = async () => {
     setError(null);
 
-    const range = getAbsoluteRange(rangeUnit, customStart, customEnd);
-    if (!range) {
-      setError('Select both a start and end timestamp before fetching.');
-      return;
-    }
-    const totalMs = range.end.getTime() - range.start.getTime();
-    if (totalMs <= 0) {
-      setError('End must be after start.');
-      return;
-    }
+    let timeParams = {};
 
-    const chunkMs = chunkSize === 'off' ? totalMs : Math.min(CHUNK_MS[chunkSize], totalMs);
-    const chunks = buildChunks(range.start, range.end, chunkMs);
-
-    if (chunks.length > MAX_CHUNKS) {
-      setError(`This range needs ${chunks.length} requests (limit ${MAX_CHUNKS}). Pick a bigger chunk size or a shorter range.`);
-      return;
+    if (rangeUnit === 'custom') {
+      const range = getAbsoluteRange(customStart, customEnd);
+      if (!range) {
+        setError('Select both a start and end timestamp before fetching.');
+        return;
+      }
+      if (range.end.getTime() - range.start.getTime() <= 0) {
+        setError('End must be after start.');
+        return;
+      }
+      timeParams = { startDt: range.start, endDt: range.end };
+    } else {
+      timeParams = { timePeriod: rangeUnit };
     }
 
     setLoading(true);
     setLogs([]);
     setExpandedIndex(null);
     setLastFetchMeta(null);
-    setFetchProgress({ done: 0, total: chunks.length, failed: 0 });
+    setFetchProgress({ pages: 0, events: 0, expectedTotal: 0 });
 
     const config = ENV_CONFIG[environment] || ENV_CONFIG.prod;
-    let merged = [];
-    let failedCount = 0;
     let finalLogs = [];
+    let currentToken = null;
+    let pagesFetched = 0;
+    let hasMore = true;
 
-    for (let i = 0; i < chunks.length; i += CHUNK_CONCURRENCY) {
-      const batch = chunks.slice(i, i + CHUNK_CONCURRENCY);
-      const results = await Promise.allSettled(
-        batch.map(([chunkStart, chunkEnd]) => fetchChunk(config, chunkStart, chunkEnd))
-      );
+    try {
+      while (hasMore) {
+        const data = await fetchPage(config, timeParams, currentToken);
+        const streamMeta = data.LogStream || {};
+        const events = streamMeta.events || (Array.isArray(data) ? data : []);
+        const targetCount = streamMeta.event_count || 0;
 
-      results.forEach((r) => {
-        if (r.status === 'fulfilled') {
-          merged = merged.concat(r.value);
-        } else {
-          failedCount += 1;
+        finalLogs = finalLogs.concat(events);
+        pagesFetched++;
+
+        setFetchProgress({
+          pages: pagesFetched,
+          events: finalLogs.length,
+          expectedTotal: targetCount
+        });
+
+        currentToken = streamMeta.next_token;
+
+        // Terminate loop if there is no next token OR we reached the event_count
+        if (!currentToken || (targetCount > 0 && finalLogs.length >= targetCount)) {
+          hasMore = false;
         }
-      });
+      }
 
-      // Deduplicate overlaps from boundaries
+      // Deduplicate overlaps just in case
       const uniqueLogsMap = new Map(
-        merged.map((log) => [`${log.Timestamp}-${log.Message}`, log])
+        finalLogs.map((log) => [`${log.Timestamp}-${log.Message}`, log])
       );
       finalLogs = Array.from(uniqueLogsMap.values());
 
       // Sort ascending (oldest to newest) using real Date objects 
-      // instead of string comparison to prevent jumbled sequence
       finalLogs.sort((a, b) => {
-        // Ensure UTC parsing by appending 'Z' if missing and 'T' is present
         const timeA = new Date(a.Timestamp.includes('T') && !a.Timestamp.endsWith('Z') ? a.Timestamp + 'Z' : a.Timestamp).getTime();
         const timeB = new Date(b.Timestamp.includes('T') && !b.Timestamp.endsWith('Z') ? b.Timestamp + 'Z' : b.Timestamp).getTime();
         return timeA - timeB;
       });
 
-      const done = Math.min(i + CHUNK_CONCURRENCY, chunks.length);
-      setFetchProgress({ done, total: chunks.length, failed: failedCount });
       setLogs(finalLogs);
+      setLastFetchMeta({ pageCount: pagesFetched, total: finalLogs.length });
+    } catch (err) {
+      setError(err.message || 'An error occurred while fetching log pages.');
+      setLogs(finalLogs); // Render whatever was loaded before failure
+    } finally {
+      setLoading(false);
+      setFetchProgress(null);
     }
-
-    setLastFetchMeta({ chunkCount: chunks.length, failed: failedCount, total: finalLogs.length });
-    if (failedCount > 0) {
-      setError(`${failedCount} of ${chunks.length} interval${chunks.length !== 1 ? 's' : ''} failed to load — results may be incomplete. Try again or use a bigger chunk size.`);
-    }
-    setLoading(false);
-    setFetchProgress(null);
   };
 
   const makeHumanReadable = (rawMessage) => {
@@ -572,31 +531,6 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
           )}
         </div>
 
-        {/* Chunking */}
-        <div className="flex flex-col gap-2">
-          <label className={`text-[11px] font-sans font-bold tracking-wider uppercase ${labelCls}`}>
-            Split into intervals{' '}
-            <span className="normal-case font-normal opacity-70">— works around missing pagination</span>
-          </label>
-          <div className={`flex items-center gap-1 flex-wrap p-1.5 rounded-lg border ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-100 border-neutral-200'
-            }`}>
-            {CHUNK_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setChunkSize(opt.value)}
-                className={`px-2.5 h-8 rounded-md text-xs font-sans font-bold transition-colors ${chunkSize === opt.value
-                  ? accent.segActive
-                  : darkMode
-                    ? 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'
-                    : 'text-neutral-500 hover:bg-white hover:text-neutral-800'
-                  }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div className={`flex flex-col gap-2 border-t pt-4 ${darkMode ? 'border-neutral-800/60' : 'border-neutral-200'}`}>
           <button
             className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg font-sans font-bold text-sm text-white transition-all active:scale-95 w-full sm:w-auto self-end disabled:opacity-50 disabled:cursor-not-allowed ${accent.btn}`}
@@ -605,15 +539,21 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
           >
             {loading ? <RefreshCw size={14} className="animate-spin" /> : null}
             {loading
-              ? (fetchProgress ? `Fetching interval ${fetchProgress.done}/${fetchProgress.total}…` : 'Fetching…')
+              ? (fetchProgress && fetchProgress.expectedTotal > 0
+                ? `Fetched ${fetchProgress.events} / ${fetchProgress.expectedTotal} events…`
+                : (fetchProgress ? `Fetched ${fetchProgress.events} events (${fetchProgress.pages} pages)…` : 'Fetching…'))
               : `Fetch logs from ${ENV_CONFIG[environment].label}`}
           </button>
 
-          {loading && fetchProgress && (
+          {loading && (
             <div className={`h-1 w-full rounded-full overflow-hidden ${darkMode ? 'bg-neutral-800' : 'bg-neutral-200'}`}>
               <div
-                className={`h-full transition-all duration-200 ${accent.bar}`}
-                style={{ width: `${Math.round((fetchProgress.done / fetchProgress.total) * 100)}%` }}
+                className={`h-full transition-all duration-200 ${accent.bar} ${(!fetchProgress || !fetchProgress.expectedTotal) ? 'animate-pulse' : ''}`}
+                style={{
+                  width: (fetchProgress && fetchProgress.expectedTotal > 0)
+                    ? `${Math.min(100, (fetchProgress.events / fetchProgress.expectedTotal) * 100)}%`
+                    : '100%'
+                }}
               />
             </div>
           )}
@@ -621,8 +561,7 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
           {!loading && lastFetchMeta && (
             <div className={`text-[11px] font-sans text-right ${mutedCls}`}>
               Loaded {lastFetchMeta.total.toLocaleString()} event{lastFetchMeta.total !== 1 ? 's' : ''} across{' '}
-              {lastFetchMeta.chunkCount} interval{lastFetchMeta.chunkCount !== 1 ? 's' : ''}
-              {lastFetchMeta.failed > 0 ? `, ${lastFetchMeta.failed} failed` : ''}
+              {lastFetchMeta.pageCount} page{lastFetchMeta.pageCount !== 1 ? 's' : ''}
             </div>
           )}
         </div>
