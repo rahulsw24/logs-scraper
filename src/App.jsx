@@ -203,12 +203,18 @@ function getAbsoluteRange(customStart, customEnd) {
 
 function severityFor(message, logGroup, darkMode) {
   const text = message || '';
-  if (
-    text.includes('status 4') ||
-    text.includes('status 5') ||
-    text.toLowerCase().includes('fail') ||
-    text.toLowerCase().includes('error')
-  ) {
+  const lowerText = text.toLowerCase();
+  const hasExplicitFailureSignal =
+    /\bstatus 4\d\b/.test(lowerText) ||
+    /\bstatus 5\d\b/.test(lowerText) ||
+    /\btraceback\b/.test(lowerText) ||
+    /\bexception\b/.test(lowerText) ||
+    /\bfailed\b/.test(lowerText) ||
+    /\bfatal\b/.test(lowerText);
+
+  const hasErrorPrefix = /^error\b/i.test(text) && !/\[info\]/i.test(text);
+
+  if (hasExplicitFailureSignal || hasErrorPrefix) {
     return {
       label: 'ERROR',
       rail: 'bg-rose-500',
