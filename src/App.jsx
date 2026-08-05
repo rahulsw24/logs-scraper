@@ -12,15 +12,15 @@ import {
 
 const ENV_CONFIG = {
   prod: {
-    label: '14 July',
-    domain: 'https://gpool687d69.granitestack.io',
-    poolId: 'gpool687d69',
+    label: 'Production',
+    domain: 'https://shop.vendis.com.au',
+    poolId: 'gpool812642',
     pageSize: '100', // Updated to match typical pagination size
   },
   uat: {
-    label: 'Ryse',
-    domain: 'https://ryse.today',
-    poolId: 'gpool281c99',
+    label: 'UAT',
+    domain: 'https://uat.vendis.com.au',
+    poolId: 'gpoole048a3',
     pageSize: '100',
   },
   staging: {
