@@ -18,19 +18,19 @@ const PROJECT_ENV_CONFIG = {
       label: 'Production',
       domain: 'https://shop.vendis.com.au',
       poolId: 'gpool812642',
-      ascentColor: '#E53999', // Red
+      ascentColor: '#E53999',
     },
     uat: {
       label: 'UAT',
       domain: 'https://uat.vendis.com.au',
       poolId: 'gpoole048a3',
-      ascentColor: '#FB8C00', // Orange
+      ascentColor: '#FB8C00',
     },
     staging: {
       label: 'Staging',
       domain: 'https://staging.vendis.com.au',
       poolId: 'gpoold4a251',
-      ascentColor: '#757575', // Grey
+      ascentColor: '#757575',
     },
   },
 
@@ -39,7 +39,7 @@ const PROJECT_ENV_CONFIG = {
       label: 'Beta',
       domain: 'https://ryse.today',
       poolId: 'gpool281c99',
-      ascentColor: '#E53920', // Eye-friendly Gold
+      ascentColor: '#E53920',
     },
   },
 
@@ -48,7 +48,7 @@ const PROJECT_ENV_CONFIG = {
       label: 'Beta',
       domain: 'https://ryze.granitestack.io',
       poolId: 'gpool900acf',
-      ascentColor: '#8E7CC3', // Soft Purple
+      ascentColor: '#8E7CC3',
     },
   },
 
@@ -57,7 +57,7 @@ const PROJECT_ENV_CONFIG = {
       label: 'Beta',
       domain: 'https://beta.hoozoo.com',
       poolId: 'gpool436869',
-      ascentColor: '#1976D2', // Blue
+      ascentColor: '#1976D2',
     },
   },
 
@@ -66,11 +66,25 @@ const PROJECT_ENV_CONFIG = {
       label: 'Beta',
       domain: 'https://gpool8811cb.granitestack.io',
       poolId: 'gpool8811cb',
-      ascentColor: '#00A6B2', // Eye-friendly Cyan
+      ascentColor: '#00A6B2',
+    },
+  },
+
+  'Worksana (Jobtraks)': {
+    prod: {
+      label: 'Production',
+      domain: 'https://jobtraks.com',
+      poolId: 'gpoolc071e7',
+      ascentColor: '#09819A',
+    },
+    beta: {
+      label: 'Beta',
+      domain: 'https://jobtracks-beta.granitestack.io',
+      poolId: 'gpoola27509',
+      ascentColor: '#09819A',
     },
   },
 };
-
 function clampChannel(value) {
   return Math.max(0, Math.min(255, value));
 }
