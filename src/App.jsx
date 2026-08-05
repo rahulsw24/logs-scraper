@@ -10,61 +10,86 @@ import {
 // styles resolve without a JIT compiler.
 // ===========================================================================
 
-const ENV_CONFIG = {
-  prod: {
-    label: 'Production',
-    domain: 'https://shop.vendis.com.au',
-    poolId: 'gpool812642',
-    pageSize: '100', // Updated to match typical pagination size
+const PAGE_SIZE = 100;
+
+const PROJECT_ENV_CONFIG = {
+  Vendis: {
+    prod: {
+      label: 'Production',
+      domain: 'https://shop.vendis.com.au',
+      poolId: 'gpool812642',
+    },
+    uat: {
+      label: 'UAT',
+      domain: 'https://uat.vendis.com.au',
+      poolId: 'gpoole048a3',
+    },
+    staging: {
+      label: 'Staging',
+      domain: 'https://staging.vendis.com.au',
+      poolId: 'gpoold4a251',
+    },
   },
-  uat: {
-    label: 'UAT',
-    domain: 'https://uat.vendis.com.au',
-    poolId: 'gpoole048a3',
-    pageSize: '100',
+  Ryse: {
+    beta: {
+      label: 'Beta',
+      domain: 'https://ryse.today',
+      poolId: 'gpool281c99',
+    },
   },
-  staging: {
-    label: 'Staging',
-    domain: 'https://staging.vendis.com.au',
-    poolId: 'gpoold4a251',
-    pageSize: '100',
+  'RyZe Fund': {
+    beta: {
+      label: 'Beta',
+      domain: 'https://ryze.granitestack.io',
+      poolId: 'gpool900acf',
+    },
+  },
+  Hoozoo: {
+    beta: {
+      label: 'Beta',
+      domain: 'https://beta.hoozoo.com',
+      poolId: 'gpool436869',
+    },
+  },
+  'Compliance Hero': {
+    beta: {
+      label: 'Beta',
+      domain: 'https://gpool8811cb.granitestack.io',
+      poolId: 'gpool8811cb',
+    },
   },
 };
 
-const ACCENTS = {
-  prod: {
-    topbar: 'bg-rose-500',
-    segActive: 'bg-rose-600 text-white shadow-sm shadow-rose-950/40',
-    btn: 'bg-rose-600 hover:bg-rose-500',
-    bar: 'bg-rose-600',
-    ring: 'focus:border-rose-500',
-    text: 'text-rose-400',
-  },
-  uat: {
-    topbar: 'bg-amber-500',
-    segActive: 'bg-amber-600 text-white shadow-sm shadow-amber-950/40',
-    btn: 'bg-amber-600 hover:bg-amber-500',
-    bar: 'bg-amber-600',
-    ring: 'focus:border-amber-500',
-    text: 'text-amber-400',
-  },
-  staging: {
-    topbar: 'bg-indigo-500',
-    segActive: 'bg-indigo-600 text-white shadow-sm shadow-indigo-950/40',
-    btn: 'bg-indigo-600 hover:bg-indigo-500',
-    bar: 'bg-indigo-600',
-    ring: 'focus:border-indigo-500',
-    text: 'text-indigo-400',
-  },
-};
+function buildAccentPalette(project, environment, darkMode = true) {
+  const seed = `${project}-${environment}`;
+  let hash = 0;
 
-const EXPLORER_ACCENT = {
-  topbar: 'bg-sky-500',
-  segActive: 'bg-sky-600 text-white shadow-sm shadow-sky-950/40',
-  btn: 'bg-sky-600 hover:bg-sky-500',
-  ring: 'focus:border-sky-500',
-  text: 'text-sky-400',
-};
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+    hash |= 0;
+  }
+
+  const hue = Math.abs(hash * 47) % 360;
+  const saturation = 72;
+  const lightness = darkMode ? 58 : 54;
+  const hoverLightness = darkMode ? 50 : 46;
+  const textLightness = darkMode ? 70 : 48;
+
+  const topbar = `hsl(${hue} ${saturation}% ${lightness}%)`;
+  const btn = `hsl(${hue} ${saturation}% ${lightness}%)`;
+  const btnHover = `hsl(${hue} ${saturation}% ${hoverLightness}%)`;
+  const text = `hsl(${hue} ${saturation}% ${textLightness}%)`;
+  const shadow = `0 10px 30px hsla(${hue} ${saturation}% 20% / 0.26)`;
+
+  return {
+    topbar,
+    btn,
+    btnHover,
+    bar: btn,
+    text,
+    shadow,
+  };
+}
 
 const RANGE_GROUPS = [
   {
@@ -177,7 +202,7 @@ function methodBadgeClasses(method, darkMode) {
 // Page 1 — LogStream Debugger
 // ===========================================================================
 
-function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft, inputCls, labelCls, mutedCls }) {
+function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, panelSoft, inputCls, labelCls, mutedCls }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -206,7 +231,9 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
   const sentinelRef = useRef(null);
   const queryRef = useRef({ config: null, timeParams: null });
   const pagesFetchedRef = useRef(0);
-  const accent = ACCENTS[environment];
+  const projectEnvConfig = PROJECT_ENV_CONFIG[project] || PROJECT_ENV_CONFIG.Vendis;
+  const environmentGridClass = Object.keys(projectEnvConfig).length > 2 ? 'grid-cols-3' : 'grid-cols-2';
+  const accent = buildAccentPalette(project, environment, darkMode);
 
   const sortLogs = (logList) => {
     return [...logList].sort((a, b) => {
@@ -257,7 +284,7 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
   const fetchPage = async (config, timeParams, nextToken) => {
     let queryParams =
       `pool_id=${config.poolId}&project_pk=1720&metric=LogStream&log_group=${logGroup}` +
-      `&page_size=${config.pageSize}`;
+      `&page_size=${PAGE_SIZE}`;
 
     // Apply either timePeriod OR explicit start/end datetime
     if (timeParams.timePeriod) {
@@ -306,7 +333,8 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
       timeParams = { timePeriod: rangeUnit };
     }
 
-    queryRef.current = { config: ENV_CONFIG[environment] || ENV_CONFIG.prod, timeParams };
+    const activeEnvConfig = projectEnvConfig[environment] || projectEnvConfig[Object.keys(projectEnvConfig)[0]];
+    queryRef.current = { config: activeEnvConfig, timeParams };
 
     setLoading(true);
     setLogs([]);
@@ -450,9 +478,8 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Circle size={8} className={`${loading ? 'animate-pulse' : ''} fill-emerald-500 text-emerald-500`} />
-              <h1 className="text-sm font-sans font-bold tracking-tight">LogStream Debugger</h1>
+              <h1 className="text-[14px] font-sans font-bold tracking-tight">LogStream Debugger</h1>
             </div>
-            <p className={`text-[10px] mt-0.5 font-sans ${mutedCls}`}>Active transaction stream inspector</p>
           </div>
 
           {logs.length > 0 && (
@@ -478,21 +505,27 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_1fr_1.6fr_auto] gap-3 items-end">
           {/* Environment */}
           <div className="flex flex-col gap-1.5">
-            <label className={`text-[9px] font-sans font-bold tracking-wider uppercase ${labelCls}`}>
+            <label className={`text-[12px] font-sans font-bold tracking-wider uppercase ${labelCls}`}>
               Target environment
             </label>
-            <div className={`grid grid-cols-3 p-1 rounded-lg border text-center text-[10px] font-sans font-bold ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-100 border-neutral-200'
+            <div className={`grid ${environmentGridClass} p-1 rounded-lg border text-center text-[13px] font-sans font-bold ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-100 border-neutral-200'
               }`}>
-              {Object.keys(ENV_CONFIG).map((key) => (
+              {Object.keys(projectEnvConfig).map((key) => (
                 <button
                   key={key}
                   onClick={() => setEnvironment(key)}
-                  className={`py-1 rounded-md transition-all ${environment === key
-                    ? ACCENTS[key].segActive
-                    : darkMode ? 'text-neutral-500 hover:text-neutral-300' : 'text-neutral-500 hover:text-neutral-700'
-                    }`}
+                  className="py-1 rounded-md transition-all"
+                  style={environment === key
+                    ? {
+                        backgroundColor: accent.btn,
+                        color: '#ffffff',
+                        boxShadow: accent.shadow,
+                      }
+                    : {
+                        color: darkMode ? '#8b5cf6' : '#6b7280',
+                      }}
                 >
-                  {ENV_CONFIG[key].label.toUpperCase()}
+                  {projectEnvConfig[key].label.toUpperCase()}
                 </button>
               ))}
             </div>
@@ -500,19 +533,25 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
 
           {/* Lambda target */}
           <div className="flex flex-col gap-1.5">
-            <label className={`text-[9px] font-sans font-bold tracking-wider uppercase ${labelCls}`}>
+            <label className={`text-[12px] font-sans font-bold tracking-wider uppercase ${labelCls}`}>
               Lambda target
             </label>
-            <div className={`grid grid-cols-2 p-1 rounded-lg border text-center text-[10px] font-sans font-bold ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-100 border-neutral-200'
+            <div className={`grid grid-cols-2 p-1 rounded-lg border text-center text-[13px] font-sans font-bold ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-100 border-neutral-200'
               }`}>
               {['source', 'webapi_handler'].map((target) => (
                 <button
                   key={target}
                   onClick={() => setLogGroup(target)}
-                  className={`py-1 rounded-md transition-all ${logGroup === target
-                    ? accent.segActive
-                    : darkMode ? 'text-neutral-500 hover:text-neutral-300' : 'text-neutral-500 hover:text-neutral-700'
-                    }`}
+                  className="py-1 rounded-md transition-all"
+                  style={logGroup === target
+                    ? {
+                        backgroundColor: accent.btn,
+                        color: '#ffffff',
+                        boxShadow: accent.shadow,
+                      }
+                    : {
+                        color: darkMode ? '#8b5cf6' : '#6b7280',
+                      }}
                 >
                   {target}
                 </button>
@@ -522,7 +561,7 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
 
           {/* Time range */}
           <div className="flex flex-col gap-1.5 relative" ref={pickerRef}>
-            <label className={`text-[9px] font-sans font-bold tracking-wider uppercase flex items-center gap-1.5 ${labelCls}`}>
+            <label className={`text-[12px] font-sans font-bold tracking-wider uppercase flex items-center gap-1.5 ${labelCls}`}>
               Time range <span className="opacity-70 normal-case font-normal">(UTC)</span>
             </label>
             <div className={`flex items-center gap-1 flex-wrap p-1 rounded-lg border ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-100 border-neutral-200'
@@ -530,19 +569,23 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
               {RANGE_GROUPS.map((group, gi) => (
                 <React.Fragment key={group.label}>
                   {gi > 0 && <div className={`w-px h-6 mx-1.5 ${darkMode ? 'bg-neutral-800' : 'bg-neutral-300'}`} />}
-                  <span className={`text-[8px] font-sans font-bold uppercase tracking-wider pr-1 ${mutedCls}`}>
+                  <span className={`text-[10px] font-sans font-bold uppercase tracking-wider pr-1 ${mutedCls}`}>
                     {group.label}
                   </span>
                   {group.options.map((preset) => (
                     <button
                       key={preset.value}
                       onClick={() => setRangeUnit(preset.value)}
-                      className={`px-2 h-6 rounded-md text-[10px] font-sans font-bold transition-colors ${rangeUnit === preset.value
-                        ? accent.segActive
-                        : darkMode
-                          ? 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'
-                          : 'text-neutral-500 hover:bg-white hover:text-neutral-800'
-                        }`}
+                      className="px-2 h-6 rounded-md text-[13px] font-sans font-bold transition-colors"
+                      style={rangeUnit === preset.value
+                        ? {
+                            backgroundColor: accent.btn,
+                            color: '#ffffff',
+                            boxShadow: accent.shadow,
+                          }
+                        : {
+                            color: darkMode ? '#a3a3a3' : '#6b7280',
+                          }}
                     >
                       {preset.label}
                     </button>
@@ -554,12 +597,16 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
 
               <button
                 onClick={openRangePicker}
-                className={`flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-sans font-bold transition-colors ${rangeUnit === 'custom'
-                  ? accent.segActive
-                  : darkMode
-                    ? 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'
-                    : 'text-neutral-500 hover:bg-white hover:text-neutral-800'
-                  }`}
+                className="flex items-center gap-1 px-2 h-6 rounded-md text-[13px] font-sans font-bold transition-colors"
+                style={rangeUnit === 'custom'
+                  ? {
+                      backgroundColor: accent.btn,
+                      color: '#ffffff',
+                      boxShadow: accent.shadow,
+                    }
+                  : {
+                      color: darkMode ? '#a3a3a3' : '#6b7280',
+                    }}
               >
                 <Calendar size={12} />
                 {customRangeLabel}
@@ -616,7 +663,11 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
 
           <div className="flex items-end justify-end">
             <button
-              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-sans font-bold text-xs text-white transition-all active:scale-95 w-full sm:w-auto min-w-[150px] disabled:opacity-50 disabled:cursor-not-allowed ${accent.btn}`}
+              className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-sans font-bold text-[12px] text-white transition-all active:scale-95 w-full sm:w-auto min-w-[150px] disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                backgroundColor: accent.btn,
+                boxShadow: accent.shadow,
+              }}
               onClick={fetchLogsDirectly}
               disabled={loading}
             >
@@ -948,33 +999,53 @@ function ApiExplorerPage({ darkMode, panel, inputCls, mutedCls }) {
 export default function App() {
   const [darkMode, setDarkMode] = useState(true);
   const [page, setPage] = useState('logs'); // 'logs' | 'explorer'
+  const [project, setProject] = useState('Vendis');
   const [environment, setEnvironment] = useState('prod');
 
-  const accent = page === 'logs' ? ACCENTS[environment] : EXPLORER_ACCENT;
+  useEffect(() => {
+    const availableEnvironments = Object.keys(PROJECT_ENV_CONFIG[project] || PROJECT_ENV_CONFIG.Vendis);
+    if (!availableEnvironments.includes(environment)) {
+      setEnvironment(availableEnvironments[0] || 'prod');
+    }
+  }, [project, environment]);
+
+  const accent = useMemo(() => buildAccentPalette(project, environment, darkMode), [project, environment, darkMode]);
 
   const bg = darkMode ? 'bg-neutral-950 text-neutral-100' : 'bg-neutral-50 text-neutral-900';
   const panel = darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200';
   const panelSoft = darkMode ? 'bg-neutral-900/60 border-neutral-800' : 'bg-neutral-50 border-neutral-200';
   const inputCls = darkMode
-    ? `bg-neutral-950 border-neutral-800 text-neutral-100 ${accent.ring}`
-    : `bg-white border-neutral-300 text-neutral-900 ${accent.ring}`;
+    ? 'bg-neutral-950 border-neutral-800 text-neutral-100'
+    : 'bg-white border-neutral-300 text-neutral-900';
   const labelCls = darkMode ? 'text-neutral-500' : 'text-neutral-500';
   const mutedCls = darkMode ? 'text-neutral-500' : 'text-neutral-500';
 
   return (
     <div className={`min-h-screen font-mono transition-colors duration-150 overflow-x-hidden ${bg}`}>
       {/* Signature accent rail — tints with the active page/environment */}
-      <div className={`h-1 w-full ${accent.topbar} transition-colors duration-300`} />
+      <div className="h-1 w-full transition-colors duration-300" style={{ backgroundColor: accent.topbar }} />
 
       <div className="w-full px-6 py-6">
         {/* Terminal chrome header */}
         <header className={`rounded-t-xl border px-4 py-3 flex items-center justify-between gap-3 flex-wrap ${panel}`}>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full bg-rose-500/70" />
               <span className="h-2.5 w-2.5 rounded-full bg-amber-500/70" />
               <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/70" />
             </div>
+            <label className={`flex items-center gap-2 text-[12px] font-sans font-bold uppercase tracking-[0.18em] ${mutedCls}`}>
+              <span>Project name</span>
+              <select
+                value={project}
+                onChange={(e) => setProject(e.target.value)}
+                className={`rounded-lg border px-2 py-1 text-[12px] font-sans font-semibold outline-none ${inputCls}`}
+              >
+                {Object.keys(PROJECT_ENV_CONFIG).map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <div className="flex items-center gap-2">
@@ -983,19 +1054,31 @@ export default function App() {
               }`}>
               <button
                 onClick={() => setPage('logs')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all ${page === 'logs'
-                  ? ACCENTS[environment].segActive
-                  : darkMode ? 'text-neutral-500 hover:text-neutral-300' : 'text-neutral-500 hover:text-neutral-700'
-                  }`}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all text-[12px]"
+                style={page === 'logs'
+                  ? {
+                      backgroundColor: accent.btn,
+                      color: '#ffffff',
+                      boxShadow: accent.shadow,
+                    }
+                  : {
+                      color: darkMode ? '#8b5cf6' : '#6b7280',
+                    }}
               >
                 <Terminal size={12} /> Logs
               </button>
               <button
                 onClick={() => setPage('explorer')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all ${page === 'explorer'
-                  ? EXPLORER_ACCENT.segActive
-                  : darkMode ? 'text-neutral-500 hover:text-neutral-300' : 'text-neutral-500 hover:text-neutral-700'
-                  }`}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all text-[12px]"
+                style={page === 'explorer'
+                  ? {
+                      backgroundColor: accent.btn,
+                      color: '#ffffff',
+                      boxShadow: accent.shadow,
+                    }
+                  : {
+                      color: darkMode ? '#8b5cf6' : '#6b7280',
+                    }}
               >
                 <Network size={12} /> API Explorer
               </button>
@@ -1019,6 +1102,7 @@ export default function App() {
             darkMode={darkMode}
             environment={environment}
             setEnvironment={setEnvironment}
+            project={project}
             panel={panel}
             panelSoft={panelSoft}
             inputCls={inputCls}
