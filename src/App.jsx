@@ -93,6 +93,15 @@ const PROJECT_ENV_CONFIG = {
       ascentColor: '#800080',
     }
   },
+  'Indigo Hub': {
+    
+    beta: {
+      label: 'Beta',
+      domain: 'https://hub.indigofinance.com.au/',
+      poolId: 'gpool414599',
+      ascentColor: '#320071',
+    }
+  },
 };
 function clampChannel(value) {
   return Math.max(0, Math.min(255, value));
