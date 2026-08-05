@@ -12,15 +12,15 @@ import {
 
 const ENV_CONFIG = {
   prod: {
-    label: 'Production',
-    domain: 'https://shop.vendis.com.au',
-    poolId: 'gpool812642',
+    label: '14 July',
+    domain: 'https://gpool687d69.granitestack.io',
+    poolId: 'gpool687d69',
     pageSize: '100', // Updated to match typical pagination size
   },
   uat: {
-    label: 'UAT',
-    domain: 'https://uat.vendis.com.au',
-    poolId: 'gpoole048a3',
+    label: 'Ryse',
+    domain: 'https://ryse.today',
+    poolId: 'gpool281c99',
     pageSize: '100',
   },
   staging: {
@@ -180,9 +180,13 @@ function methodBadgeClasses(method, darkMode) {
 function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft, inputCls, labelCls, mutedCls }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState(null);
   const [fetchProgress, setFetchProgress] = useState(null);
   const [lastFetchMeta, setLastFetchMeta] = useState(null);
+  const [nextToken, setNextToken] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [pagesFetched, setPagesFetched] = useState(0);
 
   const [logGroup, setLogGroup] = useState('source');
 
@@ -198,7 +202,26 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
   const [copiedIndex, setCopiedIndex] = useState(null);
 
   const pickerRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const sentinelRef = useRef(null);
+  const queryRef = useRef({ config: null, timeParams: null });
+  const pagesFetchedRef = useRef(0);
   const accent = ACCENTS[environment];
+
+  const sortLogs = (logList) => {
+    return [...logList].sort((a, b) => {
+      const timeA = new Date(a.Timestamp.includes('T') && !a.Timestamp.endsWith('Z') ? a.Timestamp + 'Z' : a.Timestamp).getTime();
+      const timeB = new Date(b.Timestamp.includes('T') && !b.Timestamp.endsWith('Z') ? b.Timestamp + 'Z' : b.Timestamp).getTime();
+      return timeA - timeB;
+    });
+  };
+
+  const mergeLogs = (existingLogs, incomingLogs) => {
+    const uniqueLogsMap = new Map(
+      [...existingLogs, ...incomingLogs].map((log) => [`${log.Timestamp}-${log.Message}`, log])
+    );
+    return sortLogs(Array.from(uniqueLogsMap.values()));
+  };
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -283,62 +306,74 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
       timeParams = { timePeriod: rangeUnit };
     }
 
+    queryRef.current = { config: ENV_CONFIG[environment] || ENV_CONFIG.prod, timeParams };
+
     setLoading(true);
     setLogs([]);
     setExpandedIndex(null);
     setLastFetchMeta(null);
+    setNextToken(null);
+    setHasMore(false);
+    setPagesFetched(0);
+    pagesFetchedRef.current = 0;
     setFetchProgress({ pages: 0, events: 0, expectedTotal: 0 });
 
-    const config = ENV_CONFIG[environment] || ENV_CONFIG.prod;
-    let finalLogs = [];
-    let currentToken = null;
-    let pagesFetched = 0;
-    let hasMore = true;
-
     try {
-      while (hasMore) {
-        const data = await fetchPage(config, timeParams, currentToken);
-        const streamMeta = data.LogStream || {};
-        const events = streamMeta.events || (Array.isArray(data) ? data : []);
-        const targetCount = streamMeta.event_count || 0;
+      const data = await fetchPage(queryRef.current.config, timeParams, null);
+      const streamMeta = data.LogStream || {};
+      const events = streamMeta.events || (Array.isArray(data) ? data : []);
+      const targetCount = streamMeta.event_count || 0;
+      const firstPageLogs = sortLogs(events);
+      const currentToken = streamMeta.next_token || null;
 
-        finalLogs = finalLogs.concat(events);
-        pagesFetched++;
-
-        setFetchProgress({
-          pages: pagesFetched,
-          events: finalLogs.length,
-          expectedTotal: targetCount
-        });
-
-        currentToken = streamMeta.next_token;
-
-        // Terminate loop if there is no next token OR we reached the event_count
-        if (!currentToken || (targetCount > 0 && finalLogs.length >= targetCount)) {
-          hasMore = false;
-        }
-      }
-
-      // Deduplicate overlaps just in case
-      const uniqueLogsMap = new Map(
-        finalLogs.map((log) => [`${log.Timestamp}-${log.Message}`, log])
-      );
-      finalLogs = Array.from(uniqueLogsMap.values());
-
-      // Sort ascending (oldest to newest) using real Date objects 
-      finalLogs.sort((a, b) => {
-        const timeA = new Date(a.Timestamp.includes('T') && !a.Timestamp.endsWith('Z') ? a.Timestamp + 'Z' : a.Timestamp).getTime();
-        const timeB = new Date(b.Timestamp.includes('T') && !b.Timestamp.endsWith('Z') ? b.Timestamp + 'Z' : b.Timestamp).getTime();
-        return timeA - timeB;
+      pagesFetchedRef.current = 1;
+      setPagesFetched(1);
+      setLogs(firstPageLogs);
+      setNextToken(currentToken);
+      setHasMore(Boolean(currentToken));
+      setLastFetchMeta({ pageCount: 1, total: firstPageLogs.length });
+      setFetchProgress({
+        pages: 1,
+        events: firstPageLogs.length,
+        expectedTotal: targetCount
       });
-
-      setLogs(finalLogs);
-      setLastFetchMeta({ pageCount: pagesFetched, total: finalLogs.length });
     } catch (err) {
       setError(err.message || 'An error occurred while fetching log pages.');
-      setLogs(finalLogs); // Render whatever was loaded before failure
+      setLogs([]);
     } finally {
       setLoading(false);
+      setFetchProgress(null);
+    }
+  };
+
+  const loadMoreLogs = async () => {
+    if (!nextToken || isLoadingMore || loading || !queryRef.current.config) return;
+
+    setIsLoadingMore(true);
+
+    try {
+      const data = await fetchPage(queryRef.current.config, queryRef.current.timeParams, nextToken);
+      const streamMeta = data.LogStream || {};
+      const events = streamMeta.events || (Array.isArray(data) ? data : []);
+      const targetCount = streamMeta.event_count || 0;
+      const nextPageToken = streamMeta.next_token || null;
+      const mergedLogs = mergeLogs(logs, events);
+
+      pagesFetchedRef.current += 1;
+      setPagesFetched(pagesFetchedRef.current);
+      setLogs(mergedLogs);
+      setNextToken(nextPageToken);
+      setHasMore(Boolean(nextPageToken));
+      setLastFetchMeta({ pageCount: pagesFetchedRef.current, total: mergedLogs.length });
+      setFetchProgress({
+        pages: pagesFetchedRef.current,
+        events: mergedLogs.length,
+        expectedTotal: targetCount
+      });
+    } catch (err) {
+      setError(err.message || 'An error occurred while fetching more log pages.');
+    } finally {
+      setIsLoadingMore(false);
       setFetchProgress(null);
     }
   };
@@ -371,6 +406,29 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
     });
   };
 
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    const sentinel = sentinelRef.current;
+
+    if (!container || !sentinel || !hasMore) return undefined;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !loading && !isLoadingMore) {
+          loadMoreLogs();
+        }
+      },
+      {
+        root: container,
+        rootMargin: '120px',
+        threshold: 0.1,
+      }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loading, isLoadingMore, nextToken, logs.length]);
+
   const filteredLogs = useMemo(
     () =>
       logs.filter((log) => {
@@ -387,29 +445,49 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
 
   return (
     <>
-      <div className={`border-x px-5 py-2 ${darkMode ? 'border-neutral-800' : 'border-neutral-200'}`}>
-        <h1 className="text-lg font-sans font-bold tracking-tight flex items-center gap-2">
-          <Circle size={8} className={`${loading ? 'animate-pulse' : ''} fill-emerald-500 text-emerald-500`} />
-          LogStream Debugger
-        </h1>
-        <p className={`text-xs mt-0.5 font-sans ${mutedCls}`}>Active transaction stream inspector</p>
-      </div>
+      <div className={`border-x border-b rounded-b-xl px-4 py-3 mb-4 flex flex-col gap-3 ${panel}`}>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Circle size={8} className={`${loading ? 'animate-pulse' : ''} fill-emerald-500 text-emerald-500`} />
+              <h1 className="text-sm font-sans font-bold tracking-tight">LogStream Debugger</h1>
+            </div>
+            <p className={`text-[10px] mt-0.5 font-sans ${mutedCls}`}>Active transaction stream inspector</p>
+          </div>
 
-      {/* Control deck */}
-      <div className={`border-x border-b rounded-b-xl px-5 py-5 mb-6 flex flex-col gap-5 ${panel}`}>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {logs.length > 0 && (
+            <div className="flex items-center gap-2 min-w-[220px] flex-1 max-w-sm justify-end">
+              <div className="relative w-full">
+                <Search size={14} className={`absolute left-2.5 top-2.5 ${mutedCls}`} />
+                <input
+                  className={`w-full pl-8 pr-24 py-1.5 rounded-lg outline-none text-xs border transition-colors ${inputCls}`}
+                  type="text"
+                  placeholder="Filter logs…"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <span className={`absolute right-2 top-1.5 text-[10px] font-sans font-bold px-2 py-0.5 rounded border ${darkMode ? 'bg-neutral-900 text-neutral-300 border-neutral-800' : 'bg-neutral-100 text-neutral-700 border-neutral-200'
+                  }`}>
+                  {filteredLogs.length} / {logs.length.toLocaleString()}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_1fr_1.6fr_auto] gap-3 items-end">
           {/* Environment */}
-          <div className="flex flex-col gap-2">
-            <label className={`text-[11px] font-sans font-bold tracking-wider uppercase ${labelCls}`}>
+          <div className="flex flex-col gap-1.5">
+            <label className={`text-[9px] font-sans font-bold tracking-wider uppercase ${labelCls}`}>
               Target environment
             </label>
-            <div className={`grid grid-cols-3 p-1 rounded-lg border text-center text-xs font-sans font-bold ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-100 border-neutral-200'
+            <div className={`grid grid-cols-3 p-1 rounded-lg border text-center text-[10px] font-sans font-bold ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-100 border-neutral-200'
               }`}>
               {Object.keys(ENV_CONFIG).map((key) => (
                 <button
                   key={key}
                   onClick={() => setEnvironment(key)}
-                  className={`py-1.5 rounded-md transition-all ${environment === key
+                  className={`py-1 rounded-md transition-all ${environment === key
                     ? ACCENTS[key].segActive
                     : darkMode ? 'text-neutral-500 hover:text-neutral-300' : 'text-neutral-500 hover:text-neutral-700'
                     }`}
@@ -421,169 +499,157 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
           </div>
 
           {/* Lambda target */}
-          <div className="flex flex-col gap-2">
-            <label className={`text-[11px] font-sans font-bold tracking-wider uppercase ${labelCls}`}>
+          <div className="flex flex-col gap-1.5">
+            <label className={`text-[9px] font-sans font-bold tracking-wider uppercase ${labelCls}`}>
               Lambda target
             </label>
-            <select
-              className={`w-full p-2 rounded-lg outline-none text-sm h-[38px] border transition-colors ${inputCls}`}
-              value={logGroup}
-              onChange={(e) => setLogGroup(e.target.value)}
-            >
-              <option value="source">source</option>
-              <option value="webapi_handler">webapi_handler</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Time range */}
-        <div className="flex flex-col gap-2 relative" ref={pickerRef}>
-          <label className={`text-[11px] font-sans font-bold tracking-wider uppercase flex items-center gap-1.5 ${labelCls}`}>
-            Time range <span className="opacity-70 normal-case font-normal">(Searches processed in UTC)</span>
-          </label>
-          <div className={`flex items-center gap-1 flex-wrap p-1.5 rounded-lg border ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-100 border-neutral-200'
-            }`}>
-            {RANGE_GROUPS.map((group, gi) => (
-              <React.Fragment key={group.label}>
-                {gi > 0 && <div className={`w-px h-6 mx-1.5 ${darkMode ? 'bg-neutral-800' : 'bg-neutral-300'}`} />}
-                <span className={`text-[9px] font-sans font-bold uppercase tracking-wider pr-1 ${mutedCls}`}>
-                  {group.label}
-                </span>
-                {group.options.map((preset) => (
-                  <button
-                    key={preset.value}
-                    onClick={() => setRangeUnit(preset.value)}
-                    className={`px-2.5 h-8 rounded-md text-xs font-sans font-bold transition-colors ${rangeUnit === preset.value
-                      ? accent.segActive
-                      : darkMode
-                        ? 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'
-                        : 'text-neutral-500 hover:bg-white hover:text-neutral-800'
-                      }`}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </React.Fragment>
-            ))}
-
-            <div className={`w-px h-6 mx-1.5 ${darkMode ? 'bg-neutral-800' : 'bg-neutral-300'}`} />
-
-            <button
-              onClick={openRangePicker}
-              className={`flex items-center gap-1.5 px-3 h-8 rounded-md text-xs font-sans font-bold transition-colors ${rangeUnit === 'custom'
-                ? accent.segActive
-                : darkMode
-                  ? 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'
-                  : 'text-neutral-500 hover:bg-white hover:text-neutral-800'
-                }`}
-            >
-              <Calendar size={13} />
-              {customRangeLabel}
-            </button>
-          </div>
-
-          {/* Custom range popover */}
-          {showRangePicker && (
-            <div className={`absolute z-20 top-full mt-2 right-0 w-72 rounded-xl border shadow-xl p-4 flex flex-col gap-3 ${panel}`}>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-sans font-bold uppercase tracking-wide">Custom range (UTC)</span>
-                <button onClick={() => setShowRangePicker(false)} className={mutedCls}>
-                  <X size={14} />
-                </button>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className={`text-[11px] font-sans ${labelCls}`}>Start</label>
-                <input
-                  type="datetime-local"
-                  step="1"
-                  value={draftStart}
-                  onChange={(e) => setDraftStart(e.target.value)}
-                  className={`p-2 rounded-lg outline-none text-sm border ${inputCls} ${darkMode ? '[color-scheme:dark]' : '[color-scheme:light]'}`}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className={`text-[11px] font-sans ${labelCls}`}>End</label>
-                <input
-                  type="datetime-local"
-                  step="1"
-                  value={draftEnd}
-                  onChange={(e) => setDraftEnd(e.target.value)}
-                  className={`p-2 rounded-lg outline-none text-sm border ${inputCls} ${darkMode ? '[color-scheme:dark]' : '[color-scheme:light]'}`}
-                />
-              </div>
-              <div className="flex justify-between gap-2 pt-1">
+            <div className={`grid grid-cols-2 p-1 rounded-lg border text-center text-[10px] font-sans font-bold ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-100 border-neutral-200'
+              }`}>
+              {['source', 'webapi_handler'].map((target) => (
                 <button
-                  onClick={clearCustomRange}
-                  className={`text-xs font-sans font-bold px-3 py-1.5 rounded-lg border ${darkMode ? 'border-neutral-800 text-neutral-400 hover:bg-neutral-800' : 'border-neutral-200 text-neutral-500 hover:bg-neutral-100'
+                  key={target}
+                  onClick={() => setLogGroup(target)}
+                  className={`py-1 rounded-md transition-all ${logGroup === target
+                    ? accent.segActive
+                    : darkMode ? 'text-neutral-500 hover:text-neutral-300' : 'text-neutral-500 hover:text-neutral-700'
                     }`}
                 >
-                  Clear
+                  {target}
                 </button>
-                <button
-                  onClick={applyCustomRange}
-                  disabled={!draftStart || !draftEnd}
-                  className={`text-xs font-sans font-bold px-3 py-1.5 rounded-lg text-white transition-colors disabled:opacity-40 ${accent.btn}`}
-                >
-                  Apply range
-                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Time range */}
+          <div className="flex flex-col gap-1.5 relative" ref={pickerRef}>
+            <label className={`text-[9px] font-sans font-bold tracking-wider uppercase flex items-center gap-1.5 ${labelCls}`}>
+              Time range <span className="opacity-70 normal-case font-normal">(UTC)</span>
+            </label>
+            <div className={`flex items-center gap-1 flex-wrap p-1 rounded-lg border ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-100 border-neutral-200'
+              }`}>
+              {RANGE_GROUPS.map((group, gi) => (
+                <React.Fragment key={group.label}>
+                  {gi > 0 && <div className={`w-px h-6 mx-1.5 ${darkMode ? 'bg-neutral-800' : 'bg-neutral-300'}`} />}
+                  <span className={`text-[8px] font-sans font-bold uppercase tracking-wider pr-1 ${mutedCls}`}>
+                    {group.label}
+                  </span>
+                  {group.options.map((preset) => (
+                    <button
+                      key={preset.value}
+                      onClick={() => setRangeUnit(preset.value)}
+                      className={`px-2 h-6 rounded-md text-[10px] font-sans font-bold transition-colors ${rangeUnit === preset.value
+                        ? accent.segActive
+                        : darkMode
+                          ? 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'
+                          : 'text-neutral-500 hover:bg-white hover:text-neutral-800'
+                        }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </React.Fragment>
+              ))}
+
+              <div className={`w-px h-6 mx-1.5 ${darkMode ? 'bg-neutral-800' : 'bg-neutral-300'}`} />
+
+              <button
+                onClick={openRangePicker}
+                className={`flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-sans font-bold transition-colors ${rangeUnit === 'custom'
+                  ? accent.segActive
+                  : darkMode
+                    ? 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'
+                    : 'text-neutral-500 hover:bg-white hover:text-neutral-800'
+                  }`}
+              >
+                <Calendar size={12} />
+                {customRangeLabel}
+              </button>
+            </div>
+
+            {showRangePicker && (
+              <div className={`absolute z-20 top-full mt-2 right-0 w-72 rounded-xl border shadow-xl p-4 flex flex-col gap-3 ${panel}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-sans font-bold uppercase tracking-wide">Custom range (UTC)</span>
+                  <button onClick={() => setShowRangePicker(false)} className={mutedCls}>
+                    <X size={14} />
+                  </button>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className={`text-[11px] font-sans ${labelCls}`}>Start</label>
+                  <input
+                    type="datetime-local"
+                    step="1"
+                    value={draftStart}
+                    onChange={(e) => setDraftStart(e.target.value)}
+                    className={`p-2 rounded-lg outline-none text-sm border ${inputCls} ${darkMode ? '[color-scheme:dark]' : '[color-scheme:light]'}`}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className={`text-[11px] font-sans ${labelCls}`}>End</label>
+                  <input
+                    type="datetime-local"
+                    step="1"
+                    value={draftEnd}
+                    onChange={(e) => setDraftEnd(e.target.value)}
+                    className={`p-2 rounded-lg outline-none text-sm border ${inputCls} ${darkMode ? '[color-scheme:dark]' : '[color-scheme:light]'}`}
+                  />
+                </div>
+                <div className="flex justify-between gap-2 pt-1">
+                  <button
+                    onClick={clearCustomRange}
+                    className={`text-xs font-sans font-bold px-3 py-1.5 rounded-lg border ${darkMode ? 'border-neutral-800 text-neutral-400 hover:bg-neutral-800' : 'border-neutral-200 text-neutral-500 hover:bg-neutral-100'
+                      }`}
+                  >
+                    Clear
+                  </button>
+                  <button
+                    onClick={applyCustomRange}
+                    disabled={!draftStart || !draftEnd}
+                    className={`text-xs font-sans font-bold px-3 py-1.5 rounded-lg text-white transition-colors disabled:opacity-40 ${accent.btn}`}
+                  >
+                    Apply range
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+
+          <div className="flex items-end justify-end">
+            <button
+              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-sans font-bold text-xs text-white transition-all active:scale-95 w-full sm:w-auto min-w-[150px] disabled:opacity-50 disabled:cursor-not-allowed ${accent.btn}`}
+              onClick={fetchLogsDirectly}
+              disabled={loading}
+            >
+              {loading ? <RefreshCw size={14} className="animate-spin" /> : null}
+              {loading
+                ? (fetchProgress && fetchProgress.expectedTotal > 0
+                  ? `Fetched ${fetchProgress.events} / ${fetchProgress.expectedTotal} events…`
+                  : (fetchProgress ? `Fetched ${fetchProgress.events} events (${fetchProgress.pages} pages)…` : 'Fetching…'))
+                : `Fetch logs`}
+            </button>
+          </div>
         </div>
 
-        <div className={`flex flex-col gap-2 border-t pt-4 ${darkMode ? 'border-neutral-800/60' : 'border-neutral-200'}`}>
-          <button
-            className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg font-sans font-bold text-sm text-white transition-all active:scale-95 w-full sm:w-auto self-end disabled:opacity-50 disabled:cursor-not-allowed ${accent.btn}`}
-            onClick={fetchLogsDirectly}
-            disabled={loading}
-          >
-            {loading ? <RefreshCw size={14} className="animate-spin" /> : null}
-            {loading
-              ? (fetchProgress && fetchProgress.expectedTotal > 0
-                ? `Fetched ${fetchProgress.events} / ${fetchProgress.expectedTotal} events…`
-                : (fetchProgress ? `Fetched ${fetchProgress.events} events (${fetchProgress.pages} pages)…` : 'Fetching…'))
-              : `Fetch logs from ${ENV_CONFIG[environment].label}`}
-          </button>
+        {loading && (
+          <div className={`h-1 w-full rounded-full overflow-hidden ${darkMode ? 'bg-neutral-800' : 'bg-neutral-200'}`}>
+            <div
+              className={`h-full transition-all duration-200 ${accent.bar} ${(!fetchProgress || !fetchProgress.expectedTotal) ? 'animate-pulse' : ''}`}
+              style={{
+                width: (fetchProgress && fetchProgress.expectedTotal > 0)
+                  ? `${Math.min(100, (fetchProgress.events / fetchProgress.expectedTotal) * 100)}%`
+                  : '100%'
+              }}
+            />
+          </div>
+        )}
 
-          {loading && (
-            <div className={`h-1 w-full rounded-full overflow-hidden ${darkMode ? 'bg-neutral-800' : 'bg-neutral-200'}`}>
-              <div
-                className={`h-full transition-all duration-200 ${accent.bar} ${(!fetchProgress || !fetchProgress.expectedTotal) ? 'animate-pulse' : ''}`}
-                style={{
-                  width: (fetchProgress && fetchProgress.expectedTotal > 0)
-                    ? `${Math.min(100, (fetchProgress.events / fetchProgress.expectedTotal) * 100)}%`
-                    : '100%'
-                }}
-              />
-            </div>
-          )}
-
-          {!loading && lastFetchMeta && (
-            <div className={`text-[11px] font-sans text-right ${mutedCls}`}>
-              Loaded {lastFetchMeta.total.toLocaleString()} event{lastFetchMeta.total !== 1 ? 's' : ''} across{' '}
-              {lastFetchMeta.pageCount} page{lastFetchMeta.pageCount !== 1 ? 's' : ''}
-            </div>
-          )}
-        </div>
+        {!loading && lastFetchMeta && (
+          <div className={`text-[10px] font-sans text-right ${mutedCls}`}>
+            Loaded {lastFetchMeta.total.toLocaleString()} event{lastFetchMeta.total !== 1 ? 's' : ''} across{' '}
+            {pagesFetched} page{pagesFetched !== 1 ? 's' : ''}
+          </div>
+        )}
       </div>
-
-      {/* Search / stats bar */}
-      {logs.length > 0 && (
-        <div className="relative mb-5">
-          <input
-            className={`w-full p-3 pl-10 pr-40 rounded-xl text-sm outline-none border transition-colors ${inputCls}`}
-            type="text"
-            placeholder="Filter by message or timestamp…"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          <Search size={15} className={`absolute left-3.5 top-3.5 ${mutedCls}`} />
-          <span className={`absolute right-3 top-2.5 text-[11px] font-sans font-bold px-2.5 py-1.5 rounded-lg border ${darkMode ? 'bg-neutral-900 text-neutral-300 border-neutral-800' : 'bg-neutral-100 text-neutral-700 border-neutral-200'
-            }`}>
-            {filteredLogs.length} matches · {logs.length.toLocaleString()} loaded
-          </span>
-        </div>
-      )}
 
       {error && (
         <div className={`p-4 rounded-xl mb-6 text-sm flex gap-3 border ${darkMode ? 'bg-rose-500/10 text-rose-300 border-rose-500/20' : 'bg-rose-50 text-rose-700 border-rose-200'
@@ -596,7 +662,7 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
       )}
 
       {/* Log stream panel */}
-      <div className={`border rounded-xl overflow-hidden shadow-xl ${panel}`}>
+      <div ref={scrollContainerRef} className={`border rounded-xl overflow-y-auto max-h-[640px] shadow-xl ${panel}`}>
         {filteredLogs.length === 0 ? (
           <div className={`p-16 text-center text-sm font-sans ${mutedCls}`}>
             {loading ? 'Connecting to remote cluster…' : 'Terminal ready. Run a query to see log entries here.'}
@@ -609,7 +675,7 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
               const readable = makeHumanReadable(log.Message);
 
               return (
-                <div key={index} className="flex">
+                <div key={`${log.Timestamp}-${log.Message}-${index}`} className="flex">
                   <div className={`w-1 shrink-0 ${sev.rail}`} />
                   <div className={`flex-1 min-w-0 transition-colors ${isExpanded ? panelSoft : ''}`}>
                     <div
@@ -660,6 +726,11 @@ function LogStreamPage({ darkMode, environment, setEnvironment, panel, panelSoft
                 </div>
               );
             })}
+            {hasMore && (
+              <div ref={sentinelRef} className="py-3 text-center text-[11px] font-sans font-bold uppercase tracking-[0.24em]">
+                {isLoadingMore ? 'Loading more logs…' : 'Scroll to load more logs'}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -904,17 +975,6 @@ export default function App() {
               <span className="h-2.5 w-2.5 rounded-full bg-amber-500/70" />
               <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/70" />
             </div>
-            <span className={`text-xs ${mutedCls}`}>
-              vendis <span className="opacity-50">/</span>{' '}
-              {page === 'logs' ? (
-                <>
-                  logstream-debugger <span className="opacity-50">/</span>{' '}
-                  <span className={accent.text}>{environment}</span>
-                </>
-              ) : (
-                <span className={accent.text}>api-explorer</span>
-              )}
-            </span>
           </div>
 
           <div className="flex items-center gap-2">
