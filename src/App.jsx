@@ -48,7 +48,7 @@ const PROJECT_ENV_CONFIG = {
       label: 'Beta',
       domain: 'https://ryze.granitestack.io',
       poolId: 'gpool900acf',
-      ascentColor: '#8E7CC3',
+      ascentColor: '#0E1C59',
     },
   },
 
@@ -83,6 +83,15 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpoola27509',
       ascentColor: '#09819A',
     },
+  },
+  Rochford : {
+    
+    beta: {
+      label: 'Beta',
+      domain: 'https://rochford-beta.granitestack.io',
+      poolId: 'gpoolc352e3',
+      ascentColor: '#800080',
+    }
   },
 };
 function clampChannel(value) {
