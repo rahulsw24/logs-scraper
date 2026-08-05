@@ -18,76 +18,129 @@ const PROJECT_ENV_CONFIG = {
       label: 'Production',
       domain: 'https://shop.vendis.com.au',
       poolId: 'gpool812642',
+      ascentColor: '#E53999', // Red
     },
     uat: {
       label: 'UAT',
       domain: 'https://uat.vendis.com.au',
       poolId: 'gpoole048a3',
+      ascentColor: '#FB8C00', // Orange
     },
     staging: {
       label: 'Staging',
       domain: 'https://staging.vendis.com.au',
       poolId: 'gpoold4a251',
+      ascentColor: '#757575', // Grey
     },
   },
+
   Ryse: {
     beta: {
       label: 'Beta',
       domain: 'https://ryse.today',
       poolId: 'gpool281c99',
+      ascentColor: '#E53920', // Eye-friendly Gold
     },
   },
+
   'RyZe Fund': {
     beta: {
       label: 'Beta',
       domain: 'https://ryze.granitestack.io',
       poolId: 'gpool900acf',
+      ascentColor: '#8E7CC3', // Soft Purple
     },
   },
+
   Hoozoo: {
     beta: {
       label: 'Beta',
       domain: 'https://beta.hoozoo.com',
       poolId: 'gpool436869',
+      ascentColor: '#1976D2', // Blue
     },
   },
+
   'Compliance Hero': {
     beta: {
       label: 'Beta',
       domain: 'https://gpool8811cb.granitestack.io',
       poolId: 'gpool8811cb',
+      ascentColor: '#00A6B2', // Eye-friendly Cyan
     },
   },
 };
 
-function buildAccentPalette(project, environment, darkMode = true) {
-  const seed = `${project}-${environment}`;
-  let hash = 0;
+function clampChannel(value) {
+  return Math.max(0, Math.min(255, value));
+}
 
-  for (let i = 0; i < seed.length; i++) {
-    hash = (hash << 5) - hash + seed.charCodeAt(i);
-    hash |= 0;
+function normalizeHex(hex) {
+  const clean = (hex || '#000000').replace('#', '').trim();
+  if (clean.length === 3) {
+    return `#${clean.split('').map((char) => char + char).join('')}`;
+  }
+  return `#${clean.padEnd(6, '0').slice(0, 6)}`;
+}
+
+function hexToRgb(hex) {
+  const normalized = normalizeHex(hex);
+  const raw = normalized.slice(1);
+  return {
+    r: Number.parseInt(raw.slice(0, 2), 16),
+    g: Number.parseInt(raw.slice(2, 4), 16),
+    b: Number.parseInt(raw.slice(4, 6), 16),
+  };
+}
+
+function rgbToHex({ r, g, b }) {
+  const toHex = (value) => clampChannel(value).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function shadeHex(hex, amount) {
+  const { r, g, b } = hexToRgb(hex);
+  return rgbToHex({
+    r: r + amount,
+    g: g + amount,
+    b: b + amount,
+  });
+}
+
+function buildAccentPalette(project, environment, darkMode = true) {
+  const baseColor = PROJECT_ENV_CONFIG[project]?.[environment]?.ascentColor || '#4f46e5';
+  const base = normalizeHex(baseColor);
+  const { r, g, b } = hexToRgb(base);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  let hue = 0;
+  const lightness = (max + min) / 2;
+  const saturation = delta === 0 ? 0 : delta / (255 - Math.abs(2 * lightness - 255));
+
+  if (delta !== 0) {
+    if (max === r) {
+      hue = ((g - b) / delta) % 6;
+    } else if (max === g) {
+      hue = (b - r) / delta + 2;
+    } else {
+      hue = (r - g) / delta + 4;
+    }
   }
 
-  const hue = Math.abs(hash * 47) % 360;
-  const saturation = 72;
-  const lightness = darkMode ? 58 : 54;
-  const hoverLightness = darkMode ? 50 : 46;
-  const textLightness = darkMode ? 70 : 48;
+  hue = Math.round(hue * 60);
+  if (hue < 0) hue += 360;
 
-  const topbar = `hsl(${hue} ${saturation}% ${lightness}%)`;
-  const btn = `hsl(${hue} ${saturation}% ${lightness}%)`;
-  const btnHover = `hsl(${hue} ${saturation}% ${hoverLightness}%)`;
-  const text = `hsl(${hue} ${saturation}% ${textLightness}%)`;
-  const shadow = `0 10px 30px hsla(${hue} ${saturation}% 20% / 0.26)`;
+  const mutedText = darkMode ? shadeHex(base, 44) : shadeHex(base, -32);
+  const baseShadow = `hsla(${hue} ${Math.round(saturation * 100)}% ${Math.round(lightness)}% / 0.34)`;
 
   return {
-    topbar,
-    btn,
-    btnHover,
-    bar: btn,
-    text,
-    shadow,
+    topbar: base,
+    btn: base,
+    btnHover: darkMode ? shadeHex(base, -12) : shadeHex(base, 12),
+    bar: base,
+    text: mutedText,
+    shadow: `0 10px 30px ${baseShadow}`,
   };
 }
 
@@ -519,7 +572,6 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
                     ? {
                         backgroundColor: accent.btn,
                         color: '#ffffff',
-                        boxShadow: accent.shadow,
                       }
                     : {
                         color: darkMode ? '#8b5cf6' : '#6b7280',
@@ -547,7 +599,6 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
                     ? {
                         backgroundColor: accent.btn,
                         color: '#ffffff',
-                        boxShadow: accent.shadow,
                       }
                     : {
                         color: darkMode ? '#8b5cf6' : '#6b7280',
@@ -581,7 +632,6 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
                         ? {
                             backgroundColor: accent.btn,
                             color: '#ffffff',
-                            boxShadow: accent.shadow,
                           }
                         : {
                             color: darkMode ? '#a3a3a3' : '#6b7280',
@@ -602,7 +652,6 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
                   ? {
                       backgroundColor: accent.btn,
                       color: '#ffffff',
-                      boxShadow: accent.shadow,
                     }
                   : {
                       color: darkMode ? '#a3a3a3' : '#6b7280',
@@ -652,7 +701,10 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
                   <button
                     onClick={applyCustomRange}
                     disabled={!draftStart || !draftEnd}
-                    className={`text-xs font-sans font-bold px-3 py-1.5 rounded-lg text-white transition-colors disabled:opacity-40 ${accent.btn}`}
+                    className="text-xs font-sans font-bold px-3 py-1.5 rounded-lg text-white transition-colors disabled:opacity-40"
+                    style={{
+                      backgroundColor: accent.btn,
+                    }}
                   >
                     Apply range
                   </button>
@@ -666,7 +718,6 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
               className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-sans font-bold text-[12px] text-white transition-all active:scale-95 w-full sm:w-auto min-w-[150px] disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 backgroundColor: accent.btn,
-                boxShadow: accent.shadow,
               }}
               onClick={fetchLogsDirectly}
               disabled={loading}
@@ -684,8 +735,9 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
         {loading && (
           <div className={`h-1 w-full rounded-full overflow-hidden ${darkMode ? 'bg-neutral-800' : 'bg-neutral-200'}`}>
             <div
-              className={`h-full transition-all duration-200 ${accent.bar} ${(!fetchProgress || !fetchProgress.expectedTotal) ? 'animate-pulse' : ''}`}
+              className={`h-full transition-all duration-200 ${(!fetchProgress || !fetchProgress.expectedTotal) ? 'animate-pulse' : ''}`}
               style={{
+                backgroundColor: accent.bar,
                 width: (fetchProgress && fetchProgress.expectedTotal > 0)
                   ? `${Math.min(100, (fetchProgress.events / fetchProgress.expectedTotal) * 100)}%`
                   : '100%'
@@ -742,7 +794,7 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
                       </div>
                       <div className="shrink-0">
                         {isExpanded ? (
-                          <ChevronUp size={14} className={accent.text} />
+                          <ChevronUp size={14} style={{ color: accent.text }} />
                         ) : (
                           <ChevronDown size={14} className={mutedCls} />
                         )}
@@ -754,7 +806,10 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
                         <div className={`flex justify-between items-center gap-3 text-[11px] min-w-0 ${mutedCls}`}>
                           <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto log-scroll">
                             <span className="font-sans shrink-0">Log stream:</span>
-                            <code className={`px-1 py-0.5 rounded whitespace-nowrap ${accent.text} ${darkMode ? 'bg-neutral-800' : 'bg-neutral-100'}`}>
+                            <code
+                              className={`px-1 py-0.5 rounded whitespace-nowrap ${darkMode ? 'bg-neutral-800' : 'bg-neutral-100'}`}
+                              style={{ color: accent.text }}
+                            >
                               {log.LogStreamName || '—'}
                             </code>
                           </div>
@@ -1059,7 +1114,6 @@ export default function App() {
                   ? {
                       backgroundColor: accent.btn,
                       color: '#ffffff',
-                      boxShadow: accent.shadow,
                     }
                   : {
                       color: darkMode ? '#8b5cf6' : '#6b7280',
@@ -1074,7 +1128,6 @@ export default function App() {
                   ? {
                       backgroundColor: accent.btn,
                       color: '#ffffff',
-                      boxShadow: accent.shadow,
                     }
                   : {
                       color: darkMode ? '#8b5cf6' : '#6b7280',
