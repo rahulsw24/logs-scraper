@@ -38,8 +38,14 @@ const PROJECT_ENV_CONFIG = {
   },
 
   Ryse: {
-    beta: {
-      label: 'Beta',
+     beta: {
+      label: 'Staging',
+      domain: 'https://staging.ryse.today/',
+      poolId: 'gpool00b953',
+      ascentColor: '#72B77A', // Purple
+    },
+    prod: {
+      label: 'Production',
       domain: 'https://ryse.today',
       poolId: 'gpool281c99',
       ascentColor: '#E53920',
