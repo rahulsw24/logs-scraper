@@ -12,8 +12,6 @@ import {
 
 const PAGE_SIZE = 100;
 
-
-// Add a new object here to add a new project
 const PROJECT_ENV_CONFIG = {
   Vendis: {
     prod: {
@@ -266,6 +264,50 @@ function severityFor(message, logGroup, darkMode) {
       row: darkMode ? 'text-rose-200' : 'text-rose-800',
     };
   }
+  // These four message shapes show up across every lambda/log group
+  // (source, webapi_handler, konect, and anything added to LOG_GROUPS
+  // later), so the detection here is intentionally keyed off the message
+  // text rather than the log group name.
+  if (/Data at source/i.test(text)) {
+    return {
+      label: 'SOURCE DATA',
+      rail: 'bg-cyan-400',
+      chip: darkMode
+        ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+        : 'bg-cyan-50 text-cyan-700 border-cyan-200',
+      row: darkMode ? 'text-cyan-100' : 'text-cyan-900',
+    };
+  }
+  if (/updated_data/i.test(text)) {
+    return {
+      label: 'UPDATED DATA',
+      rail: 'bg-fuchsia-400',
+      chip: darkMode
+        ? 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30'
+        : 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200',
+      row: darkMode ? 'text-fuchsia-100' : 'text-fuchsia-900',
+    };
+  }
+  if (/make request Kwargs/i.test(text)) {
+    return {
+      label: 'REQUEST KWARGS',
+      rail: 'bg-blue-400',
+      chip: darkMode
+        ? 'bg-blue-500/10 text-blue-300 border-blue-500/30'
+        : 'bg-blue-50 text-blue-700 border-blue-200',
+      row: darkMode ? 'text-blue-100' : 'text-blue-900',
+    };
+  }
+  if (/request args/i.test(text)) {
+    return {
+      label: 'REQUEST ARGS',
+      rail: 'bg-lime-400',
+      chip: darkMode
+        ? 'bg-lime-500/10 text-lime-300 border-lime-500/30'
+        : 'bg-lime-50 text-lime-700 border-lime-200',
+      row: darkMode ? 'text-lime-100' : 'text-lime-900',
+    };
+  }
   if (text.startsWith('START') || text.startsWith('INIT_START')) {
     return {
       label: 'START',
@@ -322,6 +364,144 @@ function methodBadgeClasses(method, darkMode) {
     : 'bg-sky-50 text-sky-700 border-sky-200';
 }
 
+// ---------------------------------------------------------------------
+// Message-type detection + payload extraction for log rows — decides
+// which extra copy actions (JSON with real quotes / cURL) to surface
+// per row, regardless of which log group it came from.
+// ---------------------------------------------------------------------
+
+function safePythonDictParse(text) {
+  if (!text) return null;
+  try {
+    const jsonish = text
+      .replace(/'/g, '"')
+      .replace(/\bNone\b/g, 'null')
+      .replace(/\bTrue\b/g, 'true')
+      .replace(/\bFalse\b/g, 'false');
+    return JSON.parse(jsonish);
+  } catch {
+    return null;
+  }
+}
+
+// Strips the "Data at source," / "updated_data," prefix (or a
+// "content b'...'" wrapper) and returns a pretty-printed JSON string with
+// real double quotes. Returns null if it can't be parsed cleanly.
+function extractDictJson(rawMessage) {
+  if (!rawMessage) return null;
+  try {
+    let cleanStr = rawMessage;
+    const wrappedMatch = cleanStr.match(/content b'(.*?)'(\s*:\s*status\s*\d+)?$/is);
+    if (wrappedMatch) {
+      cleanStr = wrappedMatch[1];
+    } else {
+      const jsonMatch = cleanStr.match(/(?:Data at source|updated_data),\s*(\{[\s\S]*\})/i);
+      if (jsonMatch) {
+        cleanStr = jsonMatch[1];
+      }
+    }
+    const standardizedJson = cleanStr
+      .replace(/'/g, '"')
+      .replace(/\bNone\b/g, 'null')
+      .replace(/\bTrue\b/g, 'true')
+      .replace(/\bFalse\b/g, 'false');
+    return JSON.stringify(JSON.parse(standardizedJson), null, 2);
+  } catch {
+    return null;
+  }
+}
+
+function detectMessageType(message) {
+  const text = message || '';
+  if (/Data at source/i.test(text)) return 'data_at_source';
+  if (/updated_data/i.test(text)) return 'updated_data';
+  if (/make request Kwargs/i.test(text)) return 'request_kwargs';
+  if (/request args/i.test(text)) return 'request_args';
+  return 'other';
+}
+
+// "make request Kwargs : -> <url>, Payload : -> {...} headers -> {...}, bearer -> None, query_params -> {...}"
+function buildCurlFromKwargs(rawMessage) {
+  if (!rawMessage) return null;
+  try {
+    const urlMatch = rawMessage.match(/Kwargs\s*:\s*->\s*([^,\n\r]+)/i);
+    if (!urlMatch) return null;
+    const url = urlMatch[1].trim();
+
+    const payloadMatch = rawMessage.match(/Payload\s*:\s*->\s*(\{[\s\S]*?\})(?:\s*headers|\s*$)/i);
+    const headersMatch = rawMessage.match(/headers\s*->\s*(\{[\s\S]*?\})(?:\s*,?\s*bearer|\s*$)/i);
+    const queryMatch = rawMessage.match(/query_params\s*->\s*(\{[\s\S]*?\})/i);
+
+    const payload = payloadMatch ? safePythonDictParse(payloadMatch[1]) : null;
+    const headers = headersMatch ? safePythonDictParse(headersMatch[1]) : null;
+    const queryParams = queryMatch ? safePythonDictParse(queryMatch[1]) : null;
+
+    let finalUrl = url;
+    if (queryParams && Object.keys(queryParams).length > 0) {
+      const qs = new URLSearchParams(queryParams).toString();
+      finalUrl += (url.includes('?') ? '&' : '?') + qs;
+    }
+
+    const method = payload ? 'POST' : 'GET';
+    let curl = `curl -X ${method} '${finalUrl}'`;
+    if (headers) {
+      Object.entries(headers).forEach(([key, value]) => {
+        curl += ` \\\n  -H '${key}: ${value}'`;
+      });
+    }
+    if (payload) {
+      curl += ` \\\n  -H 'Content-Type: application/json'`;
+      curl += ` \\\n  -d '${JSON.stringify(payload)}'`;
+    }
+    return curl;
+  } catch {
+    return null;
+  }
+}
+
+// "request args {'method': 'POST', 'url': '...', 'data': '{...}'} : headers {...}"
+function buildCurlFromRequestArgs(rawMessage) {
+  if (!rawMessage) return null;
+  try {
+    const methodMatch = rawMessage.match(/['"]method['"]\s*:\s*['"]([A-Za-z]+)['"]/i);
+    const urlMatch = rawMessage.match(/['"]url['"]\s*:\s*['"]([^'"]+)['"]/i);
+    const dataMatch = rawMessage.match(/['"]data['"]\s*:\s*['"]([\s\S]*?)['"]\s*(?:\}|,)?\s*:\s*headers/i);
+    const headersMatch = rawMessage.match(/:\s*headers\s*(\{[\s\S]*\})\s*$/i);
+
+    if (!urlMatch) return null;
+    const method = methodMatch ? methodMatch[1] : 'GET';
+    const url = urlMatch[1];
+    const headers = headersMatch ? safePythonDictParse(headersMatch[1]) : null;
+
+    let curl = `curl -X ${method} '${url}'`;
+    if (headers) {
+      Object.entries(headers).forEach(([key, value]) => {
+        curl += ` \\\n  -H '${key}: ${value}'`;
+      });
+    }
+    if (dataMatch) {
+      curl += ` \\\n  -d '${dataMatch[1]}'`;
+    }
+    return curl;
+  } catch {
+    return null;
+  }
+}
+
+function CopyActionButton({ label, text, copyKey, activeKey, onCopy, darkMode }) {
+  const copied = activeKey === copyKey;
+  return (
+    <button
+      onClick={() => onCopy(text, copyKey)}
+      className={`flex items-center gap-1 font-sans font-bold px-2 py-1 rounded border transition-colors shrink-0 ${darkMode ? 'border-neutral-800 hover:bg-neutral-800' : 'border-neutral-200 hover:bg-neutral-100'
+        }`}
+    >
+      {copied ? <Check size={12} /> : <Copy size={12} />}
+      {copied ? 'Copied' : label}
+    </button>
+  );
+}
+
 // ===========================================================================
 // Page 1 — LogStream Debugger
 // ===========================================================================
@@ -348,7 +528,7 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
 
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedIndex, setExpandedIndex] = useState(null);
-  const [copiedIndex, setCopiedIndex] = useState(null);
+  const [copiedKey, setCopiedKey] = useState(null);
 
   const pickerRef = useRef(null);
   const scrollContainerRef = useRef(null);
@@ -407,8 +587,9 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
   };
 
   const fetchPage = async (config, timeParams, nextToken) => {
+    const projectPk = config.projectPk || config.project_pk || 1720;
     let queryParams =
-      `pool_id=${config.poolId}&project_pk=${config.projectPk}&metric=LogStream&log_group=${logGroup}` +
+      `pool_id=${config.poolId}&project_pk=${projectPk}&metric=LogStream&log_group=${logGroup}` +
       `&page_size=${PAGE_SIZE}`;
 
     // Apply either timePeriod OR explicit start/end datetime
@@ -531,31 +712,12 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
     }
   };
 
-  const makeHumanReadable = (rawMessage) => {
-    if (!rawMessage) return '';
-    try {
-      let cleanStr = rawMessage;
-      if (cleanStr.includes("content b'")) {
-        const match = cleanStr.match(/content b'(.*?)'(\s*:\s*status\s*\d+)?$/s);
-        if (match) cleanStr = match[1];
-      } else {
-        cleanStr = cleanStr.replace(/^(updated_data|Data at source),\s*/, '');
-      }
-      const standardizedJson = cleanStr
-        .replace(/'/g, '"')
-        .replace(/None/g, 'null')
-        .replace(/True/g, 'true')
-        .replace(/False/g, 'false');
-      return JSON.stringify(JSON.parse(standardizedJson), null, 2);
-    } catch (e) {
-      return rawMessage;
-    }
-  };
+  const makeHumanReadable = (rawMessage) => extractDictJson(rawMessage) || rawMessage || '';
 
-  const handleCopy = (text, index) => {
+  const handleCopy = (text, key) => {
     navigator.clipboard?.writeText(text).then(() => {
-      setCopiedIndex(index);
-      setTimeout(() => setCopiedIndex(null), 1500);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 1500);
     });
   };
 
@@ -848,6 +1010,15 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
               const isExpanded = expandedIndex === index;
               const sev = severityFor(log.Message, logGroup, darkMode);
               const readable = makeHumanReadable(log.Message);
+              const msgType = detectMessageType(log.Message);
+              const jsonPayload =
+                (msgType === 'data_at_source' || msgType === 'updated_data')
+                  ? extractDictJson(log.Message)
+                  : null;
+              const curlPayload =
+                msgType === 'request_kwargs' ? buildCurlFromKwargs(log.Message)
+                  : msgType === 'request_args' ? buildCurlFromRequestArgs(log.Message)
+                    : null;
 
               return (
                 <div key={`${log.Timestamp}-${log.Message}-${index}`} className="flex">
@@ -885,14 +1056,36 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
                               {log.LogStreamName || '—'}
                             </code>
                           </div>
-                          <button
-                            onClick={() => handleCopy(readable, index)}
-                            className={`flex items-center gap-1 font-sans font-bold px-2 py-1 rounded border transition-colors shrink-0 ${darkMode ? 'border-neutral-800 hover:bg-neutral-800' : 'border-neutral-200 hover:bg-neutral-100'
-                              }`}
-                          >
-                            {copiedIndex === index ? <Check size={12} /> : <Copy size={12} />}
-                            {copiedIndex === index ? 'Copied' : 'Copy'}
-                          </button>
+                          <div className="flex items-center gap-2 flex-wrap justify-end shrink-0">
+                            <CopyActionButton
+                              label="Copy raw"
+                              text={log.Message}
+                              copyKey={`${index}-raw`}
+                              activeKey={copiedKey}
+                              onCopy={handleCopy}
+                              darkMode={darkMode}
+                            />
+                            {jsonPayload && (
+                              <CopyActionButton
+                                label="Copy JSON"
+                                text={jsonPayload}
+                                copyKey={`${index}-json`}
+                                activeKey={copiedKey}
+                                onCopy={handleCopy}
+                                darkMode={darkMode}
+                              />
+                            )}
+                            {msgType === 'request_args' && curlPayload && (
+                              <CopyActionButton
+                                label="Copy cURL"
+                                text={curlPayload}
+                                copyKey={`${index}-curl`}
+                                activeKey={copiedKey}
+                                onCopy={handleCopy}
+                                darkMode={darkMode}
+                              />
+                            )}
+                          </div>
                         </div>
                         <pre className={`p-4 rounded-lg text-xs overflow-x-auto whitespace-pre-wrap break-all leading-relaxed max-h-[420px] overflow-y-auto border log-scroll ${darkMode ? 'bg-neutral-950 border-neutral-800 text-neutral-200' : 'bg-neutral-50 border-neutral-200 text-neutral-800'
                           }`}>
