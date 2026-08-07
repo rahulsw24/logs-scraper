@@ -12,6 +12,8 @@ import {
 
 const PAGE_SIZE = 100;
 
+
+// Add a new object here to add a new project
 const PROJECT_ENV_CONFIG = {
   Vendis: {
     prod: {
