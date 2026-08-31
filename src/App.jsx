@@ -43,6 +43,7 @@ const PROJECT_ENV_CONFIG = {
       domain: 'https://staging.ryse.today/',
       poolId: 'gpool00b953',
       ascentColor: '#72B77A',
+      projectPk: 1868,
     },
     prod: {
       label: 'Production',
@@ -111,19 +112,19 @@ const PROJECT_ENV_CONFIG = {
   'Indigo Hub': {
     beta: {
       label: 'Beta',
-      domain: 'https://hub.indigofinance.com.au/',
+      domain: 'https://hub.indigofinance.com.au',
       poolId: 'gpool414599',
       ascentColor: '#320071',
       projectPk: 759,
     },
   },
   PlanAVenture : {
-    
     beta: {
       label: 'Beta',
-      domain: 'https://planaventure-beta.granitestack.io/',
+      domain: 'https://planaventure-beta.granitestack.io',
       poolId: 'gpool427713',
       ascentColor: '#5EEAD4', 
+      projectPk: 1839,
     }
   },
 };
