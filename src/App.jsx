@@ -42,7 +42,7 @@ const PROJECT_ENV_CONFIG = {
       label: 'Staging',
       domain: 'https://staging.ryse.today/',
       poolId: 'gpool00b953',
-      ascentColor: '#72B77A', // Purple
+      ascentColor: '#72B77A',
     },
     prod: {
       label: 'Production',
@@ -116,6 +116,15 @@ const PROJECT_ENV_CONFIG = {
       ascentColor: '#320071',
       projectPk: 759,
     },
+  },
+  PlanAVenture : {
+    
+    beta: {
+      label: 'Beta',
+      domain: 'https://planaventure-beta.granitestack.io/',
+      poolId: 'gpool427713',
+      ascentColor: '#5EEAD4', 
+    }
   },
 };
 
