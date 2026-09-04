@@ -40,7 +40,7 @@ const PROJECT_ENV_CONFIG = {
   Ryse: {
      beta: {
       label: 'Staging',
-      domain: 'https://staging.ryse.today/',
+      domain: 'https://staging.ryse.today',
       poolId: 'gpool00b953',
       ascentColor: '#72B77A',
       projectPk: 1868,
