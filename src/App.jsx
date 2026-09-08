@@ -123,7 +123,7 @@ const PROJECT_ENV_CONFIG = {
       label: 'Beta',
       domain: 'https://planaventure-beta.granitestack.io',
       poolId: 'gpool427713',
-      ascentColor: '#5EEAD4', 
+      ascentColor: '#0c79f9', 
       projectPk: 1839,
     }
   },
