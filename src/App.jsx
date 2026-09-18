@@ -127,6 +127,16 @@ const PROJECT_ENV_CONFIG = {
       projectPk: 1839,
     }
   },
+  KhouriCare: {
+    staging: {
+      label: 'Beta',
+      domain: 'https://gpool4702f4.granitestack.io/',
+      poolId: 'gpool4702f4',
+      ascentColor: '#E63999',
+      projectPk: 1911,
+
+    }
+  },
 };
 
 // Lambda / log-group targets — add a new log group by adding another entry
