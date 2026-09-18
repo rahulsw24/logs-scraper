@@ -132,11 +132,17 @@ const PROJECT_ENV_CONFIG = {
 // Lambda / log-group targets — add a new log group by adding another entry
 // here. Everything that renders the picker (grid sizing, buttons, query
 // param) reads from this list.
-const LOG_GROUPS = [
-  { value: 'source', label: 'source' },
-  { value: 'webapi_handler', label: 'webapi_handler' },
-  { value: 'konect', label: 'konect' },
-];
+function getLogGroups(project, environment) {
+  const activeEnvConfig = PROJECT_ENV_CONFIG[project]?.[environment] || PROJECT_ENV_CONFIG.Vendis.prod;
+  const ecsPool = activeEnvConfig?.poolId || 'gpool900acf';
+
+  return [
+    { value: 'source', label: 'source' },
+    { value: 'webapi_handler', label: 'webapi_handler' },
+    { value: 'konect', label: 'konect' },
+    { value: `/ecs/${ecsPool}-backend`, label: 'ECS' },
+  ];
+}
 
 // Literal grid-cols-N classes so Tailwind's non-JIT resolver can see them.
 function gridColsClass(count) {
@@ -533,7 +539,8 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
   const [hasMore, setHasMore] = useState(false);
   const [pagesFetched, setPagesFetched] = useState(0);
 
-  const [logGroup, setLogGroup] = useState(LOG_GROUPS[0].value);
+  const logGroups = useMemo(() => getLogGroups(project, environment), [project, environment]);
+  const [logGroup, setLogGroup] = useState(logGroups[0].value);
 
   const [rangeUnit, setRangeUnit] = useState('12h');
   const [customStart, setCustomStart] = useState('');
@@ -553,8 +560,14 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
   const pagesFetchedRef = useRef(0);
   const projectEnvConfig = PROJECT_ENV_CONFIG[project] || PROJECT_ENV_CONFIG.Vendis;
   const environmentGridClass = gridColsClass(Object.keys(projectEnvConfig).length);
-  const logGroupGridClass = gridColsClass(LOG_GROUPS.length);
+  const logGroupGridClass = gridColsClass(logGroups.length);
   const accent = buildAccentPalette(project, environment, darkMode);
+
+  useEffect(() => {
+    if (!logGroups.some((group) => group.value === logGroup)) {
+      setLogGroup(logGroups[0].value);
+    }
+  }, [logGroups, logGroup]);
 
   const sortLogs = (logList) => {
     return [...logList].sort((a, b) => {
@@ -840,7 +853,7 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
             </label>
             <div className={`grid ${logGroupGridClass} p-1 rounded-lg border text-center text-[13px] font-sans font-bold ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-100 border-neutral-200'
               }`}>
-              {LOG_GROUPS.map((group) => (
+              {logGroups.map((group) => (
                 <button
                   key={group.value}
                   onClick={() => setLogGroup(group.value)}
