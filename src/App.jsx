@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Search, ChevronDown, ChevronUp, AlertTriangle, Sun, Moon,
   Calendar, Copy, Check, RefreshCw, X, Circle, Terminal, Network,
-  Upload, Inbox,
+  Upload, Inbox, Database,
 } from 'lucide-react';
 
 // ===========================================================================
@@ -20,6 +20,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpool812642',
       ascentColor: '#E53999',
       projectPk: 1720,
+      token: '',
     },
     uat: {
       label: 'UAT',
@@ -27,6 +28,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpoole048a3',
       ascentColor: '#FB8C00',
       projectPk: 1720,
+      token: '',
     },
     staging: {
       label: 'Staging',
@@ -34,6 +36,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpoold4a251',
       ascentColor: '#757575',
       projectPk: 1720,
+      token: '',
     },
   },
 
@@ -44,6 +47,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpool00b953',
       ascentColor: '#72B77A',
       projectPk: 1868,
+      token: '',
     },
     prod: {
       label: 'Production',
@@ -51,6 +55,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpool281c99',
       ascentColor: '#E53920',
       projectPk: 1868,
+      token: '',
     },
   },
 
@@ -61,6 +66,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpool900acf',
       ascentColor: '#0E1C59',
       projectPk: 1885,
+      token: 'nfLtc8pPO1kcOLaieaJt3gbCkh4P4m',
     },
   },
 
@@ -71,6 +77,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpool436869',
       ascentColor: '#1976D2',
       projectPk: 1453,
+      token: '',
     },
   },
 
@@ -81,6 +88,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpool8811cb',
       ascentColor: '#00A6B2',
       projectPk: 1487,
+      token: '',
     },
   },
 
@@ -91,6 +99,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpoolc071e7',
       ascentColor: '#09819A',
       projectPk: 1422,
+      token: '',
     },
     beta: {
       label: 'Beta',
@@ -98,6 +107,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpoola27509',
       ascentColor: '#09819A',
       projectPk: 1422,
+      token: '',
     },
   },
   Rochford: {
@@ -107,6 +117,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpoolc352e3',
       ascentColor: '#800080',
       projectPk: 1608,
+      token: '',
     },
   },
   'Indigo Hub': {
@@ -116,6 +127,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpool414599',
       ascentColor: '#320071',
       projectPk: 759,
+      token: '',
     },
   },
   PlanAVenture : {
@@ -125,6 +137,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpool427713',
       ascentColor: '#0c79f9', 
       projectPk: 1839,
+      token: '',
     }
   },
   KhouriCare: {
@@ -134,7 +147,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpool4702f4',
       ascentColor: '#E63999',
       projectPk: 1911,
-
+      token: '',
     }
   },
 };
@@ -416,6 +429,248 @@ function safePythonDictParse(text) {
   }
 }
 
+function extractBalancedObject(text, label) {
+  if (!text || typeof text !== 'string') return null;
+  const labelIndex = text.search(new RegExp(`${label}\\s*\\{`, 'i'));
+  if (labelIndex < 0) return null;
+  const start = text.indexOf('{', labelIndex);
+  if (start < 0) return null;
+
+  let depth = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\' && (inSingleQuote || inDoubleQuote)) {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      continue;
+    }
+
+    if (char === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      continue;
+    }
+
+    if (inSingleQuote || inDoubleQuote) continue;
+
+    if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(start, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function normalizeEscapedJsonString(value) {
+  if (!value || typeof value !== 'string') return value;
+
+  return value
+    .replace(/\\'/g, "'")
+    .replace(/\\"/g, '"');
+}
+
+function decodePythonStringLiteral(rawValue) {
+  if (!rawValue || typeof rawValue !== 'string') return rawValue;
+
+  const trimmed = rawValue.trim();
+  if (!trimmed) return trimmed;
+
+  const first = trimmed[0];
+  const last = trimmed[trimmed.length - 1];
+  if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+    const inner = trimmed.slice(1, -1);
+    return normalizeEscapedJsonString(inner);
+  }
+
+  return normalizeEscapedJsonString(trimmed);
+}
+
+function extractValueFromPythonDict(text, key) {
+  if (!text || typeof text !== 'string') return null;
+
+  const fieldRegex = new RegExp(`['\"]${key}['\"]\\s*:\\s*`, 'i');
+  const fieldMatch = text.match(fieldRegex);
+  if (!fieldMatch) return null;
+
+  const valueStart = fieldMatch.index + fieldMatch[0].length;
+  if (valueStart >= text.length) return null;
+
+  const firstValueChar = text[valueStart];
+  const hasQuotedValue = firstValueChar === "'" || firstValueChar === '"';
+  if (hasQuotedValue) {
+    const quote = firstValueChar;
+    const quotedValueStart = valueStart + 1;
+    let endIndex = -1;
+    let bracketDepth = 0;
+    let escaped = false;
+    let inDoubleQuote = false;
+    let inSingleQuote = false;
+
+    for (let i = quotedValueStart; i < text.length; i += 1) {
+      const char = text[i];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+
+      if (char === '"' && !inSingleQuote) {
+        inDoubleQuote = !inDoubleQuote;
+        continue;
+      }
+
+      if (char === "'" && !inDoubleQuote) {
+        const tail = text.slice(i + 1).trimStart();
+        const afterComma = tail.replace(/^,\s*/, '');
+        const isBoundary = tail === '' ||
+          afterComma === '' ||
+          afterComma.startsWith('}') ||
+          afterComma.startsWith(']') ||
+          /^['\"]?[A-Za-z_][A-Za-z0-9_]*['\"]?\s*:/i.test(afterComma);
+
+        if (isBoundary) {
+          endIndex = i;
+          break;
+        }
+
+        inSingleQuote = !inSingleQuote;
+        continue;
+      }
+
+      if (char === '{' || char === '[' || char === '(') {
+        bracketDepth += 1;
+      } else if (char === '}' || char === ']' || char === ')') {
+        bracketDepth = Math.max(0, bracketDepth - 1);
+      }
+
+      if (char === quote && !inDoubleQuote && !inSingleQuote && bracketDepth === 0) {
+        const tail = text.slice(i + 1).trimStart();
+        const afterComma = tail.replace(/^,\s*/, '');
+        const isBoundary = tail === '' ||
+          afterComma === '' ||
+          afterComma.startsWith('}') ||
+          afterComma.startsWith(']') ||
+          /^['\"]?[A-Za-z_][A-Za-z0-9_]*['\"]?\s*:/i.test(afterComma);
+        if (isBoundary) {
+          endIndex = i;
+          break;
+        }
+      }
+    }
+
+    if (endIndex === -1) {
+      return null;
+    }
+
+    return text.slice(quotedValueStart, endIndex);
+  }
+
+  const startIndex = valueStart;
+  let depth = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let escaped = false;
+
+  for (let i = startIndex; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\' && (inSingleQuote || inDoubleQuote)) {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      continue;
+    }
+
+    if (char === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      continue;
+    }
+
+    if (inSingleQuote || inDoubleQuote) continue;
+
+    if (char === '{' || char === '[' || char === '(') {
+      depth += 1;
+    } else if (char === '}' || char === ']' || char === ')') {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) {
+        return text.slice(startIndex, i + 1).trim();
+      }
+    }
+
+    if (depth === 0 && /[,\s]/.test(char)) {
+      return text.slice(startIndex, i).trim();
+    }
+  }
+
+  return text.slice(startIndex).trim();
+}
+
+function normalizeCurlData(dataValue) {
+  if (dataValue === null || dataValue === undefined) return null;
+
+  const decodedValue = typeof dataValue === 'string' ? decodePythonStringLiteral(dataValue) : dataValue;
+
+  if (typeof decodedValue === 'string') {
+    const trimmed = decodedValue.trim();
+    if (!trimmed) return null;
+
+    const candidate = (trimmed.startsWith('{') || trimmed.startsWith('[')) ? trimmed : decodePythonStringLiteral(trimmed);
+    const repairableCandidate = normalizeEscapedJsonString(candidate);
+
+    if ((repairableCandidate.startsWith('{') && repairableCandidate.endsWith('}')) || (repairableCandidate.startsWith('[') && repairableCandidate.endsWith(']'))) {
+      try {
+        return JSON.stringify(JSON.parse(repairableCandidate));
+      } catch {
+        return repairableCandidate;
+      }
+    }
+
+    return repairableCandidate;
+  }
+
+  return JSON.stringify(decodedValue);
+}
+
+function escapeCurlShellString(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\$/g, '\\$')
+    .replace(/`/g, '\\`');
+}
+
 // Strips the "Data at source," / "updated_data," prefix (or a
 // "content b'...'" wrapper) and returns a pretty-printed JSON string with
 // real double quotes. Returns null if it can't be parsed cleanly.
@@ -475,15 +730,17 @@ function buildCurlFromKwargs(rawMessage) {
     }
 
     const method = payload ? 'POST' : 'GET';
-    let curl = `curl -X ${method} '${finalUrl}'`;
+    let curl = `curl --location --request ${method} '${finalUrl}'`;
     if (headers) {
       Object.entries(headers).forEach(([key, value]) => {
-        curl += ` \\\n  -H '${key}: ${value}'`;
+        curl += ` \\\n  --header '${key}: ${value}'`;
       });
     }
     if (payload) {
-      curl += ` \\\n  -H 'Content-Type: application/json'`;
-      curl += ` \\\n  -d '${JSON.stringify(payload)}'`;
+      const payloadValue = normalizeCurlData(payload);
+      const safePayload = escapeCurlShellString(payloadValue);
+      curl += ` \\\n  --header 'Content-Type: application/json'`;
+      curl += ` \\\n  --data-raw "${safePayload}"`;
     }
     return curl;
   } catch {
@@ -495,25 +752,30 @@ function buildCurlFromKwargs(rawMessage) {
 function buildCurlFromRequestArgs(rawMessage) {
   if (!rawMessage) return null;
   try {
-    const methodMatch = rawMessage.match(/['"]method['"]\s*:\s*['"]([A-Za-z]+)['"]/i);
-    const urlMatch = rawMessage.match(/['"]url['"]\s*:\s*['"]([^'"]+)['"]/i);
-    const dataMatch = rawMessage.match(/['"]data['"]\s*:\s*['"]([\s\S]*?)['"]\s*(?:\}|,)?\s*:\s*headers/i);
-    const headersMatch = rawMessage.match(/:\s*headers\s*(\{[\s\S]*\})\s*$/i);
+    const requestArgsString = extractBalancedObject(rawMessage, 'request args');
+    if (!requestArgsString) return null;
 
-    if (!urlMatch) return null;
-    const method = methodMatch ? methodMatch[1] : 'GET';
-    const url = urlMatch[1];
-    const headers = headersMatch ? safePythonDictParse(headersMatch[1]) : null;
+    const method = extractValueFromPythonDict(requestArgsString, 'method') || 'GET';
+    const url = extractValueFromPythonDict(requestArgsString, 'url');
+    const rawData = extractValueFromPythonDict(requestArgsString, 'data');
+    const headersString = extractBalancedObject(rawMessage, 'headers');
+    const headers = headersString ? safePythonDictParse(headersString) : null;
 
-    let curl = `curl -X ${method} '${url}'`;
+    if (!url) return null;
+
+    let curl = `curl --location --request ${String(method).toUpperCase()} '${url}'`;
     if (headers) {
       Object.entries(headers).forEach(([key, value]) => {
-        curl += ` \\\n  -H '${key}: ${value}'`;
+        curl += ` \\\n  --header '${key}: ${value}'`;
       });
     }
-    if (dataMatch) {
-      curl += ` \\\n  -d '${dataMatch[1]}'`;
+
+    const dataPayload = normalizeCurlData(rawData);
+    if (dataPayload) {
+      const safePayload = escapeCurlShellString(dataPayload);
+      curl += ` \\\n  --data-raw "${safePayload}"`;
     }
+
     return curl;
   } catch {
     return null;
@@ -555,6 +817,7 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
   const [rangeUnit, setRangeUnit] = useState('12h');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const [customHoursInput, setCustomHoursInput] = useState('2');
   const [draftStart, setDraftStart] = useState('');
   const [draftEnd, setDraftEnd] = useState('');
   const [showRangePicker, setShowRangePicker] = useState(false);
@@ -623,6 +886,16 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
     setCustomEnd('');
     setRangeUnit('12h');
     setShowRangePicker(false);
+  };
+
+  const applyCustomHours = () => {
+    const numericValue = Number(customHoursInput);
+    if (!Number.isFinite(numericValue) || numericValue <= 0 || !Number.isInteger(numericValue)) {
+      setError('Enter a valid whole number of hours (for example: 2, 3, or 4).');
+      return;
+    }
+    setRangeUnit(`${numericValue}h`);
+    setError(null);
   };
 
   const fetchPage = async (config, timeParams, nextToken) => {
@@ -917,6 +1190,35 @@ function LogStreamPage({ darkMode, environment, setEnvironment, project, panel, 
               ))}
 
               <div className={`w-px h-6 mx-1.5 ${darkMode ? 'bg-neutral-800' : 'bg-neutral-300'}`} />
+
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={customHoursInput}
+                  onChange={(e) => setCustomHoursInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      applyCustomHours();
+                    }
+                  }}
+                  className={`w-16 px-2 py-1 rounded-md outline-none text-[12px] border ${inputCls}`}
+                  placeholder="hrs"
+                  aria-label="Custom hours"
+                />
+                <button
+                  onClick={applyCustomHours}
+                  className="px-2 h-6 rounded-md text-[11px] font-sans font-bold transition-colors"
+                  style={{
+                    backgroundColor: accent.btn,
+                    color: '#ffffff',
+                  }}
+                >
+                  Apply
+                </button>
+              </div>
 
               <button
                 onClick={openRangePicker}
@@ -1352,12 +1654,356 @@ function ApiExplorerPage({ darkMode, panel, inputCls, mutedCls }) {
 }
 
 // ===========================================================================
+// Page 3 — Tables Info
+// ===========================================================================
+
+function getProjectApiBase(project, environment) {
+  const selectedProject = PROJECT_ENV_CONFIG[project] || PROJECT_ENV_CONFIG.Vendis;
+  const envConfig = selectedProject[environment] || Object.values(selectedProject)[0] || PROJECT_ENV_CONFIG.Vendis.prod;
+  return (envConfig.domain || 'https://ryze.granitestack.io').replace(/\/$/, '');
+}
+
+function TablesInfoPage({ darkMode, project, environment, panel, inputCls, mutedCls }) {
+  const configToken = useMemo(() => {
+    const envConfig = PROJECT_ENV_CONFIG[project]?.[environment] || PROJECT_ENV_CONFIG.Vendis.prod;
+    return envConfig?.token || '';
+  }, [project, environment]);
+
+  const [tables, setTables] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedTable, setSelectedTable] = useState(null);
+  const [fields, setFields] = useState([]);
+  const [loadingTables, setLoadingTables] = useState(false);
+  const [loadingFields, setLoadingFields] = useState(false);
+  const [error, setError] = useState('');
+  const [copiedKey, setCopiedKey] = useState(null);
+
+  const apiBase = useMemo(
+    () => `${getProjectApiBase(project, environment)}/aggregate/v2`,
+    [project, environment]
+  );
+
+  const handleCopy = (text, key) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 1500);
+    });
+  };
+
+  const fetchTableFields = async (table, activeToken = configToken.trim()) => {
+    if (!table || !activeToken) {
+      setFields([]);
+      return;
+    }
+
+    setLoadingFields(true);
+    setSelectedTable(table);
+    setError('');
+
+    try {
+      const response = await fetch(`${apiBase}/content-types/${table.pk}/`, {
+        method: 'GET',
+        headers: {
+          accept: 'application/json',
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${activeToken}`,
+          client: `Bearer ${activeToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Request failed (${response.status}): ${text || response.statusText}`);
+      }
+
+      const payload = await response.json();
+      setFields(Array.isArray(payload?.results) ? payload.results : []);
+    } catch (err) {
+      setError(err.message || 'Unable to load table fields.');
+      setFields([]);
+    } finally {
+      setLoadingFields(false);
+    }
+  };
+
+  const loadTables = async (activeToken = configToken.trim()) => {
+    if (!activeToken) {
+      setError('Add a bearer token to the project config for this environment.');
+      setTables([]);
+      setFields([]);
+      setSelectedTable(null);
+      return;
+    }
+
+    setLoadingTables(true);
+    setError('');
+    setTables([]);
+    setFields([]);
+    setSelectedTable(null);
+
+    try {
+      const response = await fetch(`${apiBase}/content-types/`, {
+        method: 'GET',
+        headers: {
+          accept: 'application/json',
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${activeToken}`,
+          client: `Bearer ${activeToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Request failed (${response.status}): ${text || response.statusText}`);
+      }
+
+      const payload = await response.json();
+      const nextTables = Array.isArray(payload?.results) ? payload.results : [];
+      setTables(nextTables);
+
+      if (nextTables.length > 0) {
+        await fetchTableFields(nextTables[0], activeToken);
+      }
+    } catch (err) {
+      setError(err.message || 'Unable to load table inventory.');
+      setTables([]);
+      setFields([]);
+      setSelectedTable(null);
+    } finally {
+      setLoadingTables(false);
+    }
+  };
+
+  useEffect(() => {
+    if (configToken.trim()) {
+      loadTables(configToken.trim());
+    } else {
+      setTables([]);
+      setFields([]);
+      setSelectedTable(null);
+      setError('Add a bearer token to the project config for this environment.');
+    }
+  }, [configToken, project, environment]);
+
+  const filteredTables = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return tables;
+
+    return tables.filter((table) => {
+      const haystack = [
+        table.table_name,
+        table.entity_name,
+        table.alias_name,
+        table.model,
+        table.app_label,
+        String(table.pk),
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(q);
+    });
+  }, [tables, searchTerm]);
+
+  const CopyButton = ({ text, keyName }) => (
+    <button
+      type="button"
+      onClick={() => handleCopy(text, keyName)}
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${darkMode
+        ? 'border-neutral-700 bg-neutral-950 text-neutral-300 hover:border-sky-500 hover:text-sky-400'
+        : 'border-neutral-200 bg-white text-neutral-600 hover:border-sky-500 hover:text-sky-600'
+        }`}
+      title="Copy"
+      aria-label={`Copy ${text}`}
+    >
+      {copiedKey === keyName ? <Check size={12} /> : <Copy size={12} />}
+    </button>
+  );
+
+  return (
+    <div className={`border-x border-b rounded-b-xl px-5 py-5 ${panel}`} style={{ height: 'calc(100vh - 170px)' }}>
+      <div className="mb-5 flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="flex items-center gap-2 text-lg font-sans font-bold tracking-tight">
+            <Database size={16} className="text-emerald-400" />
+            Tables Info
+          </h1>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => loadTables()}
+          className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-xs font-sans font-bold transition-colors bg-emerald-500 text-white hover:bg-emerald-400"
+        >
+          {loadingTables ? 'Loading…' : 'Refresh tables'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-5 rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-400">
+          {error}
+        </div>
+      )}
+
+      {loadingTables ? (
+        <div className={`rounded-xl border border-dashed p-10 text-center text-sm ${darkMode ? 'border-neutral-800 text-neutral-400' : 'border-neutral-300 text-neutral-600'}`}>
+          Loading table inventory…
+        </div>
+      ) : filteredTables.length === 0 ? (
+        <div className={`rounded-xl border border-dashed p-10 text-center text-sm ${darkMode ? 'border-neutral-800 text-neutral-400' : 'border-neutral-300 text-neutral-600'}`}>
+          {tables.length === 0 ? 'No tables loaded yet. Add a valid token and click Load tables.' : 'No matching tables found.'}
+        </div>
+      ) : (
+        <div className="grid gap-5 h-[calc(100%-52px)]" style={{ gridTemplateColumns: '420px minmax(0, 1fr)' }}>
+          <div className={`rounded-xl border h-full flex flex-col overflow-hidden ${darkMode ? 'border-neutral-800 bg-neutral-950' : 'border-neutral-200 bg-white'}`}>
+            <div className="border-b p-3 shrink-0">
+              <div className="relative">
+                <Search size={14} className={`absolute left-3 top-1/2 -translate-y-1/2 ${mutedCls}`} />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Search table names…"
+                  className={`w-full rounded-lg border py-2 pl-9 pr-3 text-sm outline-none ${inputCls}`}
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 min-h-0">
+              <div className="mb-2 text-[11px] font-sans font-bold uppercase tracking-[0.18em] text-neutral-500">
+                {filteredTables.length} tables
+              </div>
+              <div className="space-y-2">
+                {filteredTables.map((table) => (
+                  <button
+                    key={table.pk}
+                    type="button"
+                    onClick={() => fetchTableFields(table)}
+                    className={`w-full rounded-xl border p-3 text-left transition-colors ${selectedTable?.pk === table.pk
+                      ? darkMode
+                        ? 'border-sky-500 bg-sky-500/10'
+                        : 'border-sky-500 bg-sky-50'
+                      : darkMode
+                        ? 'border-neutral-800 bg-neutral-900 hover:border-sky-500/60'
+                        : 'border-neutral-200 bg-neutral-50 hover:border-sky-500/60'
+                      }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-sans font-bold text-sky-400">{table.table_name}</div>
+                        <div className={`mt-1 text-[11px] ${mutedCls}`}>{table.entity_name}</div>
+                      </div>
+                      <CopyButton text={table.table_name} keyName={`table-${table.pk}-name`} />
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-2 text-[11px]">
+                      <span className={`${mutedCls}`}>{table.model}</span>
+                      <span className={`rounded-md px-1.5 py-0.5 font-mono ${darkMode ? 'bg-neutral-800 text-neutral-300' : 'bg-neutral-100 text-neutral-700'}`}>
+                        {table.pk}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className={`rounded-xl border h-full flex flex-col overflow-hidden ${darkMode ? 'border-neutral-800 bg-neutral-950' : 'border-neutral-200 bg-white'}`}>
+            {selectedTable ? (
+              <>
+                <div className="border-b p-4 shrink-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] font-sans font-bold uppercase tracking-[0.18em] text-neutral-500">Selected table</div>
+                      <div className="mt-1 flex items-center gap-2 text-lg font-sans font-bold">
+                        <span className="text-sky-400">{selectedTable.table_name}</span>
+                        <CopyButton text={selectedTable.table_name} keyName={`selected-${selectedTable.pk}`} />
+                      </div>
+                    </div>
+                    <span className={`rounded-md px-2 py-1 text-[11px] font-mono ${darkMode ? 'bg-neutral-800 text-neutral-300' : 'bg-neutral-100 text-neutral-700'}`}>
+                      {selectedTable.pk}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    <div className={`rounded-lg border p-2 ${darkMode ? 'border-neutral-800 bg-neutral-900' : 'border-neutral-200 bg-neutral-50'}`}>
+                      <div className={`text-[10px] font-bold uppercase tracking-[0.18em] ${mutedCls}`}>Entity</div>
+                      <div className="mt-1 text-sm font-sans font-semibold">{selectedTable.entity_name}</div>
+                    </div>
+                    <div className={`rounded-lg border p-2 ${darkMode ? 'border-neutral-800 bg-neutral-900' : 'border-neutral-200 bg-neutral-50'}`}>
+                      <div className={`text-[10px] font-bold uppercase tracking-[0.18em] ${mutedCls}`}>Alias</div>
+                      <div className="mt-1 text-sm font-sans font-semibold">{selectedTable.alias_name}</div>
+                    </div>
+                    <div className={`rounded-lg border p-2 ${darkMode ? 'border-neutral-800 bg-neutral-900' : 'border-neutral-200 bg-neutral-50'}`}>
+                      <div className={`text-[10px] font-bold uppercase tracking-[0.18em] ${mutedCls}`}>App label</div>
+                      <div className="mt-1 text-sm font-sans font-semibold">{selectedTable.app_label}</div>
+                    </div>
+                    <div className={`rounded-lg border p-2 ${darkMode ? 'border-neutral-800 bg-neutral-900' : 'border-neutral-200 bg-neutral-50'}`}>
+                      <div className={`text-[10px] font-bold uppercase tracking-[0.18em] ${mutedCls}`}>Model</div>
+                      <div className="mt-1 text-sm font-sans font-semibold">{selectedTable.model}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 flex-1 overflow-y-auto min-h-0">
+                  <div className={`mb-3 text-[10px] font-sans font-bold uppercase tracking-[0.18em] ${mutedCls}`}>
+                    Fields ({fields.length})
+                  </div>
+
+                  {loadingFields ? (
+                    <div className={`rounded-lg border border-dashed p-6 text-center text-sm ${darkMode ? 'border-neutral-800 text-neutral-400' : 'border-neutral-300 text-neutral-600'}`}>
+                      Loading field metadata…
+                    </div>
+                  ) : fields.length === 0 ? (
+                    <div className={`rounded-lg border border-dashed p-6 text-center text-sm ${darkMode ? 'border-neutral-800 text-neutral-400' : 'border-neutral-300 text-neutral-600'}`}>
+                      No field metadata available for this table.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {fields.map((field, index) => (
+                        <div
+                          key={`${field.name}-${index}`}
+                          className={`rounded-lg border p-3 ${darkMode ? 'border-neutral-800 bg-neutral-900' : 'border-neutral-200 bg-neutral-50'}`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-sans font-bold text-sky-400">{field.name}</div>
+                              <div className={`mt-1 text-[11px] ${mutedCls}`}>{field.actual_type || field.type || 'Unknown type'}</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={`rounded-full border px-2 py-1 text-[10px] font-sans font-bold uppercase tracking-[0.12em] ${darkMode ? 'border-neutral-700 bg-neutral-800 text-neutral-200' : 'border-neutral-200 bg-white text-neutral-700'}`}>
+                                {field.type || 'unknown'}
+                              </span>
+                              <CopyButton text={field.name} keyName={`field-${selectedTable.pk}-${field.name}`} />
+                            </div>
+                          </div>
+                          <div className={`mt-2 text-[11px] ${mutedCls}`}>
+                            Foreign key: {field.foreign_key || '—'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className={`flex h-full min-h-[280px] items-center justify-center p-8 text-sm ${mutedCls}`}>
+                Select a table to view its schema.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===========================================================================
 // Root App — shared chrome, theme, and page switcher
 // ===========================================================================
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(true);
-  const [page, setPage] = useState('logs'); // 'logs' | 'explorer'
+  const [page, setPage] = useState('logs'); // 'logs' | 'explorer' | 'tables'
   const [project, setProject] = useState('Vendis');
   const [environment, setEnvironment] = useState('prod');
 
@@ -1437,7 +2083,21 @@ export default function App() {
                       color: darkMode ? '#8b5cf6' : '#6b7280',
                     }}
               >
-                <Network size={12} /> API Explorer
+                <Network size={12} /> Vendis API
+              </button>
+              <button
+                onClick={() => setPage('tables')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all text-[12px]"
+                style={page === 'tables'
+                  ? {
+                      backgroundColor: accent.btn,
+                      color: '#ffffff',
+                    }
+                  : {
+                      color: darkMode ? '#8b5cf6' : '#6b7280',
+                    }}
+              >
+                <Database size={12} /> Tables Info
               </button>
             </div>
 
@@ -1460,6 +2120,17 @@ export default function App() {
             environment={environment}
             setEnvironment={setEnvironment}
             project={project}
+            panel={panel}
+            panelSoft={panelSoft}
+            inputCls={inputCls}
+            labelCls={labelCls}
+            mutedCls={mutedCls}
+          />
+        ) : page === 'tables' ? (
+          <TablesInfoPage
+            darkMode={darkMode}
+            project={project}
+            environment={environment}
             panel={panel}
             panelSoft={panelSoft}
             inputCls={inputCls}
