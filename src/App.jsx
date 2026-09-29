@@ -47,7 +47,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpool00b953',
       ascentColor: '#72B77A',
       projectPk: 1868,
-      token: '',
+      token: 'PrRJGrrLC4kCyGaNIQQbAS2DBLaPZk',
     },
     prod: {
       label: 'Production',
@@ -55,7 +55,7 @@ const PROJECT_ENV_CONFIG = {
       poolId: 'gpool281c99',
       ascentColor: '#E53920',
       projectPk: 1868,
-      token: '',
+      token: 'NJkXpJEvGSJjD5SBzx1lX1Ol9zlmrN',
     },
   },
 
