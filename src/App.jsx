@@ -160,6 +160,7 @@ function getLogGroups(project, environment) {
   const ecsPool = activeEnvConfig?.poolId || 'gpool900acf';
 
   return [
+    { value: 'sync', label: 'sync' },
     { value: 'source', label: 'source' },
     { value: 'webapi_handler', label: 'webapi_handler' },
     { value: 'konect', label: 'konect' },
